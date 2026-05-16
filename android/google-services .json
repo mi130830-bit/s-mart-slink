@@ -1,0 +1,76 @@
+{
+  "project_info": {
+    "project_number": "616123701902",
+    "project_id": "fir-link-a8266",
+    "storage_bucket": "fir-link-a8266.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:616123701902:android:f2550c212d005d178547df",
+        "android_client_info": {
+          "package_name": "com.example.s_link"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAByLdPSuMwH8bS2VjXfTPCtnp8EyE8EZ0"
+        },
+        {
+          "current_key": "AIzaSyAvJ-b7mdO5ksB4q2ugWP8k8pyxaba6Lvk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:616123701902:android:8231e355f06ba2b58547df",
+        "android_client_info": {
+          "package_name": "com.mitis.s_link_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAByLdPSuMwH8bS2VjXfTPCtnp8EyE8EZ0"
+        },
+        {
+          "current_key": "AIzaSyAvJ-b7mdO5ksB4q2ugWP8k8pyxaba6Lvk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:616123701902:android:374e2d644fcc31448547df",
+        "android_client_info": {
+          "package_name": "com.sorbolikan.slink"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAByLdPSuMwH8bS2VjXfTPCtnp8EyE8EZ0"
+        },
+        {
+          "current_key": "AIzaSyAvJ-b7mdO5ksB4q2ugWP8k8pyxaba6Lvk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

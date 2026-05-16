@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Functions ---
+    function isSignedIn() { return request.auth != null; }
+    
+    // POS Desktop UID check
+    function isPOS() { return isSignedIn() && request.auth.uid == 'M6tBsqaPm4OlVLtvbP7gpzE8VNF2'; }
+    
+    function getRole() {
+      // Use 'in' operator which is safer than hasnAny() if token is missing properties
+      return ("role" in request.auth.token) ? request.auth.token.role : 
+             (exists(/databases/$(database)/documents/users/$(request.auth.uid)) ? 
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role : 'guest');
+    }
+    
+    function isAdmin() { 
+      return isPOS() || (isSignedIn() && getRole() == 'admin'); 
+    }
+    
+    function isApproved() { 
+      return isPOS() || (isSignedIn() && (getRole() == 'admin' || getRole() == 'driver' || getRole() == 'requester')); 
+    }
+
+    // --- Collections ---
+    
+    // ✅ Allow Approved users (including Requesters) to read users list for selecting delivery team
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isApproved());
+      allow write: if isAdmin();
+    }
+
+    match /jobs/{jobId} {
+      allow read, create, update: if isSignedIn() && isApproved();
+      allow delete: if isAdmin();
+    }
+
+    match /customers/{id} {
+      allow read, create, update: if isSignedIn() && isApproved();
+      allow delete: if isAdmin();
+    }
+
+    match /deliverers/{id} {
+      allow read: if isSignedIn() && isApproved();
+      allow write: if isAdmin();
+    }
+
+    match /cars/{id} {
+      allow read: if isSignedIn() && isApproved();
+      allow write: if isAdmin();
+    }
+
+    match /products/{id} {
+        allow read: if isApproved();
+        allow write: if isAdmin() || getRole() == 'requester';
+    }
+
+    match /receipts/{id} {
+        allow read: if isApproved();
+        allow create: if getRole() == 'requester' || isAdmin();
+        allow update: if isAdmin();
+        allow delete: if isAdmin();
+    }
+
+    match /shop_work_logs/{id} {
+      allow read: if true; 
+      allow create: if isApproved();
+      allow update, delete: if isAdmin();
+    }
+
+    match /stock_alerts/{id} {
+        allow read: if isApproved();
+        allow create: if isApproved(); 
+        allow update, delete: if isApproved();
+    }
+
+    match /config/mobile_app {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Remote Print Commands
+    match /commands/{id} {
+      allow read, create, update: if true;
+      allow delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

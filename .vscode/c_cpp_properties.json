@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "Flutter (windows)",
+            "compilerPath": "cl.exe",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64",
+            "includePath": [
+                "${workspaceFolder}/windows/flutter/ephemeral",
+                "${workspaceFolder}/windows/runner",
+                "${workspaceFolder}/**"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"
+            ]
+        }
+    ],
+    "version": 4
+}
