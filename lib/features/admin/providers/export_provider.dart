@@ -19,11 +19,16 @@ class ExportProvider with ChangeNotifier {
   // ----------------------------------------------------
   // I. ABSENCE REPORT (คงเดิม)
   // ----------------------------------------------------
-  Future<List<List<dynamic>>> getAbsenceReportData() async {
-    log('ExportProvider: Fetching Absence Report...');
+  Future<List<List<dynamic>>> getAbsenceReportData(DateTime start, DateTime end) async {
+    log('ExportProvider: Fetching Absence Report from ${start.toIso8601String()} to ${end.toIso8601String()}');
+    // Ensure end date includes the whole day
+    final endOfDay = DateTime(end.year, end.month, end.day, 23, 59, 59);
+
     final snapshot = await FirebaseFirestore.instance
         .collection('holiday_logs')
         .where('action', isEqualTo: 'holiday_start')
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
         .orderBy('date', descending: true)
         .get();
 
@@ -53,10 +58,10 @@ class ExportProvider with ChangeNotifier {
   // ----------------------------------------------------
   // II. DELIVERY REPORT (แก้ไข: เอาคนขับหลักออก)
   // ----------------------------------------------------
-  Future<List<List<dynamic>>> getDeliveryReportData() async {
+  Future<List<List<dynamic>>> getDeliveryReportData(DateTime start, DateTime end) async {
     log('ExportProvider: Fetching Delivery Report...');
 
-    final completedJobs = await _jobService.getAllCompletedJobsForReport();
+    final completedJobs = await _jobService.getCompletedJobsByDateRange(start, end);
 
     List<List<dynamic>> csvData = [
       [
@@ -96,10 +101,10 @@ class ExportProvider with ChangeNotifier {
   // ----------------------------------------------------
   // II.b DELIVERY REPORT (Excel - Separate Sheets)
   // ----------------------------------------------------
-  Future<List<int>?> getDeliveryReportExcel() async {
+  Future<List<int>?> getDeliveryReportExcel(DateTime start, DateTime end) async {
     log('ExportProvider: Generating Delivery Report (Excel)...');
 
-    final completedJobs = await _jobService.getAllCompletedJobsForReport();
+    final completedJobs = await _jobService.getCompletedJobsByDateRange(start, end);
     if (completedJobs.isEmpty) return null;
 
     // 1. Create Excel Object
@@ -198,10 +203,10 @@ class ExportProvider with ChangeNotifier {
   // ----------------------------------------------------
   // III. JOB COUNT REPORT (คงเดิม)
   // ----------------------------------------------------
-  Future<List<List<dynamic>>> getJobCountReportData() async {
+  Future<List<List<dynamic>>> getJobCountReportData(DateTime start, DateTime end) async {
     log('ExportProvider: Fetching Job Count Report...');
 
-    final completedJobs = await _jobService.getAllCompletedJobsForReport();
+    final completedJobs = await _jobService.getCompletedJobsByDateRange(start, end);
     final deliverers = await _masterDataService.getAllDeliverersForReport();
 
     final Map<String, String> delivererNames = {

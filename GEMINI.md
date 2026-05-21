@@ -59,3 +59,14 @@
   - **หมายเหตุ**: `job.customerId` เป็น Firestore string — backend มี fallback ดึง MySQL ID จาก `orderId` (= `job.localOrderId`) ซึ่งต้องมีค่าเสมอ
 - [ ] **Phase 8: Notification Support**: ตรวจสอบสถานะและส่งรูปบิล/พิกัดประกอบการแจ้งเตือน
 - [ ] **Optional Feature**: เพิ่มระบบ "Automatic Server Discovery" (UDP Broadcast) ค้นหาเครื่องแม่ในวง LAN อัตโนมัติ (จดไว้ก่อน ยังไม่ทำตอนนี้)
+- [ ] **Phase 9: Mobile Codebase Refactoring & Stability** ⏳ (Planned for Tomorrow)
+  - [ ] **UI Decoupling (ลดความซับซ้อนของหน้าจอยักษ์)**:
+    - [ ] แยกย่อย `job_detail_screen.dart` (~1,147 บรรทัด) -> ดึง `EditJobDialog`, `ApproveDepartureDialog` และ Sub-components อื่นๆ ออกไปเป็นไฟล์เฉพาะ
+    - [ ] ปรับปรุง `settings_screen.dart` (~812 บรรทัด) -> แยกส่วนการตั้งค่าต่างๆ (Connection, Printer, POS Config) ออกมาเป็นส่วนย่อย
+  - [ ] **Network & API Modularization (แยกส่วนเชื่อมต่อเครือข่าย)**:
+    - [ ] จัดระเบียบ `pos_api_service.dart` (~545 บรรทัด) โดยนำ Dart **Extension Methods** มาใช้ (แยกเป็น `sales_extension`, `stock_extension` ฯลฯ เหมือนฝั่ง Desktop)
+    - [ ] ปรับปรุงการต่อ API ให้ใช้ **Singleton HttpClient (Connection Pooling)** เพื่อลดอัตราความล้มเหลวของเน็ตมือถือคนขับรถ
+  - [ ] **Offline-First & Security Hardening (เสถียรภาพและความปลอดภัย)**:
+    - [ ] วางรากฐานระบบ SQLite/Isar Cache พร้อม Queue Sync Interceptor ช่วยให้คนขับรถทำงานและปิดงานแบบออฟไลน์ 100% ได้อย่างสมบูรณ์แบบ
+    - [ ] เสริมระบบตรวจสอบสิทธิ์ API โดยเรียกใช้ JWT Token ในทุก Network Request
+

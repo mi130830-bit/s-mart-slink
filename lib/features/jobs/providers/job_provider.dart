@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
+import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' as firestore;
+import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 
 import 'package:s_link/core/services/sync_service.dart';
 
@@ -463,6 +465,19 @@ class JobProvider with ChangeNotifier {
       log('Provider Error updating job: $e');
       rethrow;
     }
+  }
+
+  Future<List<String>> uploadJobImages(List<File> images) async {
+    List<String> newUrls = [];
+    for (var file in images) {
+      final String fileName =
+          'bills/${DateTime.now().millisecondsSinceEpoch}_${newUrls.length}.jpg';
+      final ref =
+          firebase_storage.FirebaseStorage.instance.ref().child(fileName);
+      await ref.putFile(file);
+      newUrls.add(await ref.getDownloadURL());
+    }
+    return newUrls;
   }
 
   Future<void> approveJobDeparture(String jobId,
