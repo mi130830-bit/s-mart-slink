@@ -79,3 +79,10 @@ cloudflared.exe
 
 # Temp/scratch directories
 scratch/
+
+# Irrelevant platforms and files
+web/
+windows/
+linux/
+macos/
+GEMINI.md
