@@ -78,14 +78,14 @@ class _PosConfigScreenState extends State<PosConfigScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'Cloudflare Tunnel URL',
+                'API URL (Local / Tunnel)',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _urlCtrl,
                 decoration: const InputDecoration(
-                  hintText: 'https://api.myshop.com',
+                  hintText: 'http://POS-SERVER.local:8080',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.link),
                 ),
@@ -101,7 +101,7 @@ class _PosConfigScreenState extends State<PosConfigScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'ใส่ URL ที่ได้จาก Cloudflare Tunnel (Port 8080) ของเครื่อง POS Desktop',
+                'ใส่ URL หรือ IP เครื่องแม่ เช่น http://192.168.1.100:8080 หรือ http://SERVER.local:8080',
                 style: TextStyle(color: Colors.grey, fontSize: 12),
               ),
               const SizedBox(height: 24),

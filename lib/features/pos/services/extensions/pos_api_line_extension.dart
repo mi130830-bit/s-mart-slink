@@ -3,22 +3,17 @@ part of '../pos_api_service.dart';
 extension PosApiLineExtension on PosApiService {
   // 7. Line Notification
   Future<bool> sendLineMessage(String lineUserId, String message) async {
-    if (lineUserId.isEmpty) return false; // ✅ Guard: No Line ID
+    if (lineUserId.isEmpty) return false;
     try {
-      final url = await _buildUri('/line/push-message');
-
-      if (url == null) return false;
-
-      final response = await _client.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      await _sendRequest(
+        method: 'POST',
+        path: '/line/push-message',
+        body: {
           'lineUserId': lineUserId,
           'message': message,
-        }),
+        },
       );
-
-      return response.statusCode >= 200 && response.statusCode < 300;
+      return true;
     } catch (e) {
       debugPrint('❌ API Send Line Failed: $e');
       return false;

@@ -70,77 +70,79 @@ class _ShopMenuScreenState extends State<ShopMenuScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // ── Daily Summary Card ──────────────────────────────
-              Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: _loadingSummary
-                      ? const Center(
-                          child: Padding(
-                          padding: EdgeInsets.all(8.0),
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ))
-                      : _summary == null
-                          ? const Text('ยอดวันนี้: ไม่สามารถโหลดได้',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: Colors.grey))
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'สรุปยอดวันนี้',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: Colors.grey.shade700),
-                                    ),
-                                    Text(
-                                      '${_summary!['orderCount']} บิล',
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.grey.shade600),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '฿${moneyFmt.format((_summary!['totalSales'] as num).toDouble())}',
-                                  style: const TextStyle(
-                                      fontSize: 28,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.teal),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    _buildPill(
-                                      '💵 เงินสด',
-                                      moneyFmt.format((_summary!['cashTotal']
-                                              as num)
-                                          .toDouble()),
-                                      Colors.green,
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _buildPill(
-                                      '📋 สินเชื่อ',
-                                      moneyFmt.format((_summary!['creditTotal']
-                                              as num)
-                                          .toDouble()),
-                                      Colors.orange,
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+              if (isAdmin) ...[
+                Card(
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: _loadingSummary
+                        ? const Center(
+                            child: Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ))
+                        : _summary == null
+                            ? const Text('ยอดวันนี้: ไม่สามารถโหลดได้',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.grey))
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text(
+                                        'สรุปยอดวันนี้',
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 14,
+                                            color: Colors.grey.shade700),
+                                      ),
+                                      Text(
+                                        '${_summary!['orderCount']} บิล',
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey.shade600),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    '฿${moneyFmt.format((_summary!['totalSales'] as num).toDouble())}',
+                                    style: const TextStyle(
+                                        fontSize: 28,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.teal),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      _buildPill(
+                                        '💵 เงินสด',
+                                        moneyFmt.format((_summary!['cashTotal']
+                                                as num)
+                                            .toDouble()),
+                                        Colors.green,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _buildPill(
+                                        '📋 สินเชื่อ',
+                                        moneyFmt.format((_summary!['creditTotal']
+                                                as num)
+                                            .toDouble()),
+                                        Colors.orange,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
+              ],
               // ── Menu Buttons ────────────────────────────────────
               _buildMenuButton(
                 context,

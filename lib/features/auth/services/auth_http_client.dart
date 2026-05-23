@@ -16,11 +16,21 @@ class AuthHttpClient extends http.BaseClient {
         // ดึง Token ปัจจุบัน (ถ้าหมดอายุ Firebase จะ Refresh ให้อัตโนมัติโดยเบื้องหลัง)
         final token = await user.getIdToken();
         if (token != null) {
+          debugPrint('🔑 AuthHttpClient: Token obtained, length: ${token.length}');
           request.headers['Authorization'] = 'Bearer $token';
+        } else {
+          debugPrint('❌ AuthHttpClient: Token is null!');
         }
+      } else {
+        debugPrint('❌ AuthHttpClient: User is null!');
       }
     } catch (e) {
       debugPrint('⚠️ AuthHttpClient Error fetching token: $e');
+    }
+
+    debugPrint('🌐 HTTP Request: ${request.method} ${request.url}');
+    if (!request.headers.containsKey('Authorization')) {
+      debugPrint('🚨 WARNING: Request sent WITHOUT Authorization header!');
     }
 
     return _inner.send(request);

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:s_link/features/pos/providers/cart_provider.dart';
 import 'package:s_link/features/pos/repositories/pos_repository.dart';
 import 'package:s_link/features/pos/services/promptpay_helper.dart';
@@ -11,6 +10,8 @@ import 'package:s_link/features/jobs/providers/job_provider.dart';
 import 'package:s_link/features/jobs/models/job.dart';
 import 'package:s_link/features/jobs/models/job_item.dart'; // ✅ Import JobItem
 import 'package:s_link/features/pos/services/pos_api_service.dart';
+import 'package:s_link/features/pos/widgets/payment_success_dialog.dart';
+import 'package:s_link/features/pos/widgets/quick_cash_selector.dart';
 
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key});
@@ -220,7 +221,16 @@ class _PaymentScreenState extends State<PaymentScreen> {
 
         // ✅ Show Success Dialog with Print Option
         if (!mounted) return;
-        await _showSuccessDialog(orderId);
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => PaymentSuccessDialog(
+            orderId: orderId,
+            autoPrint: _shouldPrint,
+            onContinue: () => Navigator.of(ctx).pop(),
+          ),
+        );
+        if (mounted) Navigator.pop(context, true);
       } else {
         throw Exception('Order ID returned 0'); // Simplified Check
       }
@@ -232,125 +242,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  /// แสดง Dialog สำเร็จพร้อมปุ่มปริ้นท์ใบเสร็จ
-  Future<void> _showSuccessDialog(int orderId) async {
-    bool printSent = false;
-
-    // Auto-send if toggle is ON
-    if (_shouldPrint) {
-      _sendPrintCommand(orderId);
-      printSent = true;
-    }
-
-    if (!mounted) return;
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.green, size: 32),
-                SizedBox(width: 10),
-                Text('ชำระเงินสำเร็จ!', style: TextStyle(color: Colors.green)),
-              ],
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('บิลเลขที่ #$orderId', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 16),
-                if (printSent)
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.shade200),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.print, color: Colors.blue),
-                        SizedBox(width: 8),
-                        Expanded(child: Text('ส่งคำสั่งปริ้นท์ไปยัง POS แล้ว')),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-            actionsAlignment: MainAxisAlignment.spaceBetween,
-            actions: [
-              // ปุ่มปริ้นท์ซ้ำ / ปริ้นท์ครั้งแรก
-              TextButton.icon(
-                icon: const Icon(Icons.print),
-                label: Text(printSent ? 'ปริ้นท์ซ้ำ' : '🖨️ ปริ้นท์ใบเสร็จ'),
-                style: TextButton.styleFrom(foregroundColor: Colors.blue),
-                onPressed: () {
-                  _sendPrintCommand(orderId);
-                  setDialogState(() => printSent = true);
-                },
-              ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: () {
-                  Navigator.of(ctx).pop(); // Close dialog
-                },
-                child: const Text('ขายต่อ ✓'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-
-    // After dialog closed, go back to POS
-    if (mounted) {
-      Navigator.pop(context, true);
-    }
-  }
-
-  /// ส่งคำสั่งปริ้นท์ไปยัง POS Desktop ผ่าน Firestore
-  Future<void> _sendPrintCommand(int orderId) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      String posDeviceId = prefs.getString('pos_device_id') ?? '';
-
-      if (posDeviceId.isEmpty) {
-        // ✅ Force Fallback to MASTER (User Request)
-        debugPrint('⚠️ pos_device_id not set, using default POS_MASTER');
-        posDeviceId = 'POS_MASTER';
-      }
-
-      debugPrint('📡 [S-Link] Preparing to send PRINT_RECEIPT for Order #$orderId to Device: $posDeviceId');
-      
-      final docRef = await FirebaseFirestore.instance.collection('commands').add({
-        'command': 'PRINT_RECEIPT',
-        'payload': {'order_id': orderId},
-        'target_device_id': posDeviceId,
-        'status': 'PENDING',
-        'created_at': FieldValue.serverTimestamp(),
-      });
-
-      debugPrint('✅ [S-Link] Command Sent Successfully! Doc ID: ${docRef.id}');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('🖨️ ส่งคำสั่งพิมพ์ไปที่ $posDeviceId สำเร็จ'),
-            duration: const Duration(seconds: 2),
-            backgroundColor: Colors.blue,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('❌ Send Print Command Error: $e');
     }
   }
 
@@ -489,14 +380,9 @@ class _PaymentScreenState extends State<PaymentScreen> {
               ),
               const SizedBox(height: 10),
               // Quick Cash Buttons
-              Wrap(
-                spacing: 8,
-                children: [
-                  _buildQuickCashBtn(total, 'Exact'),
-                  _buildQuickCashBtn(100, '100'),
-                  _buildQuickCashBtn(500, '500'),
-                  _buildQuickCashBtn(1000, '1000'),
-                ],
+              QuickCashSelector(
+                totalAmount: total,
+                onCashSelected: _onQuickCash,
               ),
               const SizedBox(height: 20),
 
@@ -609,13 +495,6 @@ class _PaymentScreenState extends State<PaymentScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildQuickCashBtn(double amount, String label) {
-    return ActionChip(
-      label: Text(label),
-      onPressed: () => _onQuickCash(amount),
     );
   }
 }

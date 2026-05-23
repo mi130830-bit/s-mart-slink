@@ -6,48 +6,25 @@ extension PosApiJobExtension on PosApiService {
     Map<String, dynamic> orderData, {
     String? note,
   }) async {
-    try {
-      final uri = await _buildUri('/api/v1/orders');
-      if (uri == null) throw Exception('Base URL not configured');
-
-      if (note != null && note.isNotEmpty) {
-        orderData['note'] = note;
-      }
-
-      final response = await _client.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(orderData),
-      );
-
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty) return {}; // ✅ Fix: Handle empty response
-        return jsonDecode(response.body);
-      } else {
-        throw Exception(
-            'Failed to create order: ${response.statusCode} - ${response.body}');
-      }
-    } catch (e) {
-      throw Exception('Error creating order: $e');
+    if (note != null && note.isNotEmpty) {
+      orderData['note'] = note;
     }
+    final response = await _sendRequest(
+      method: 'POST',
+      path: '/api/v1/orders',
+      body: orderData,
+    );
+    return response as Map<String, dynamic>? ?? {};
   }
 
   // 10. Daily Sales Summary
   Future<Map<String, dynamic>?> getDailySummary() async {
     try {
-      final uri = await _buildUri('/api/v1/orders/daily-summary');
-      if (uri == null) throw Exception('Base URL not configured');
-
-      final response =
-          await _client.get(uri).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty) return null;
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      } else {
-        debugPrint('❌ API getDailySummary Error: ${response.statusCode}');
-        return null;
-      }
+      final response = await _sendRequest(
+        method: 'GET',
+        path: '/api/v1/orders/daily-summary',
+      );
+      return response as Map<String, dynamic>?;
     } catch (e) {
       debugPrint('❌ getDailySummary Error: $e');
       return null;
@@ -63,28 +40,18 @@ extension PosApiJobExtension on PosApiService {
     int? orderId,
   }) async {
     try {
-      final uri = await _buildUri('/api/v1/debt/cod-payment');
-      if (uri == null) throw Exception('Base URL not configured');
-
-      final response = await _client.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
+      await _sendRequest(
+        method: 'POST',
+        path: '/api/v1/debt/cod-payment',
+        body: {
           'jobId': jobId,
           'customerId': customerId,
           'amount': amount,
           'driverId': driverId,
           if (orderId != null) 'orderId': orderId,
-        }),
+        },
       );
-
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        return true;
-      } else {
-        debugPrint(
-            '❌ API COD Payment Failed: ${response.statusCode} - ${response.body}');
-        return false;
-      }
+      return true;
     } catch (e) {
       debugPrint('❌ API COD Payment Error: $e');
       return false;
@@ -104,25 +71,18 @@ extension PosApiJobExtension on PosApiService {
           '${endDate.month.toString().padLeft(2, '0')}-'
           '${endDate.day.toString().padLeft(2, '0')}';
 
-      final uri = await _buildUri('/api/v1/jobs/list', {
-        'start': start,
-        'end': end,
-      });
-      if (uri == null) return [];
-
-      debugPrint('📡 [API] GET Delivery History: $uri');
-      final response = await _client.get(uri).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty) return [];
-        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-        final data = decoded['data'] as List<dynamic>? ?? [];
-        debugPrint('✅ [API] Got ${data.length} history records');
-        return data.cast<Map<String, dynamic>>();
-      } else {
-        debugPrint('❌ [API] getDeliveryHistory: ${response.statusCode}');
-        return [];
-      }
+      final response = await _sendRequest(
+        method: 'GET',
+        path: '/api/v1/jobs/list',
+        query: {
+          'start': start,
+          'end': end,
+        },
+      );
+      if (response == null) return [];
+      final decoded = response as Map<String, dynamic>;
+      final data = decoded['data'] as List<dynamic>? ?? [];
+      return data.cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('❌ [API] getDeliveryHistory Error: $e');
       return [];
@@ -132,20 +92,11 @@ extension PosApiJobExtension on PosApiService {
   // ✅ 13. ดึงสถิติงานส่งของ (Stats) จาก MySQL ผ่าน POS Backend API
   Future<Map<String, dynamic>?> getJobSummaryStats() async {
     try {
-      final uri = await _buildUri('/api/v1/jobs/stats');
-      if (uri == null) return null;
-
-      debugPrint('📡 [API] GET Job Stats: $uri');
-      final response =
-          await _client.get(uri).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty) return null;
-        return jsonDecode(response.body) as Map<String, dynamic>;
-      } else {
-        debugPrint('❌ [API] getJobSummaryStats Error: ${response.statusCode}');
-        return null;
-      }
+      final response = await _sendRequest(
+        method: 'GET',
+        path: '/api/v1/jobs/stats',
+      );
+      return response as Map<String, dynamic>?;
     } catch (e) {
       debugPrint('❌ [API] getJobSummaryStats Error: $e');
       return null;

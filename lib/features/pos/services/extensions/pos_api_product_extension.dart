@@ -8,36 +8,27 @@ extension PosApiProductExtension on PosApiService {
     String? search,
   }) async {
     try {
-      final query = {
-        'page': page.toString(),
-        'limit': limit.toString(),
-      };
-
-      Uri? uri;
+      final String path;
+      final Map<String, String>? query;
       if (search != null && search.isNotEmpty) {
-        uri = await _buildUri('/api/v1/products/search', {'q': search});
+        path = '/api/v1/products/search';
+        query = {'q': search};
       } else {
-        uri = await _buildUri('/api/v1/products', query);
+        path = '/api/v1/products';
+        query = {
+          'page': page.toString(),
+          'limit': limit.toString(),
+        };
       }
 
-      if (uri == null) throw Exception('Base URL not configured');
+      final response = await _sendRequest(
+        method: 'GET',
+        path: path,
+        query: query,
+      );
 
-      final response =
-          await _client.get(uri).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty || response.body == '[]') return [];
-        try {
-          final List<dynamic> data = jsonDecode(response.body);
-          return data.map((json) => PosProduct.fromMap(json)).toList();
-        } catch (e) {
-          debugPrint('❌ API Parse Error: $e');
-          debugPrint('📄 Raw Body: ${response.body}');
-          return [];
-        }
-      } else {
-        throw Exception('API Error: ${response.statusCode}');
-      }
+      if (response == null || response is! List) return [];
+      return response.map((json) => PosProduct.fromMap(json)).toList();
     } catch (e) {
       debugPrint('❌ Fetch Products Error: $e');
       return [];
@@ -46,42 +37,24 @@ extension PosApiProductExtension on PosApiService {
 
   Future<Map<String, dynamic>> updateProduct(
       int id, Map<String, dynamic> data) async {
-    try {
-      final uri = await _buildUri('/api/v1/products/$id');
-      if (uri == null) throw Exception('Base URL not configured');
-
-      final response = await _client.put(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(data),
-      );
-
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception(
-            'Failed to update product: ${response.statusCode} - ${response.body}');
-      }
-    } catch (e) {
-      throw Exception('Error updating product: $e');
-    }
+    final response = await _sendRequest(
+      method: 'PUT',
+      path: '/api/v1/products/$id',
+      body: data,
+    );
+    return response as Map<String, dynamic>? ?? {};
   }
 
   // 6. Customer Management (Hybrid)
   Future<List<PosCustomer>> searchCustomers(String term) async {
     try {
-      final uri = await _buildUri('/api/v1/customers/search', {'q': term});
-      if (uri == null) return [];
-
-      final response =
-          await _client.get(uri).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        if (response.body.isEmpty || response.body == '[]') return [];
-        final List<dynamic> data = jsonDecode(response.body);
-        return data.map((json) => PosCustomer.fromMap(json)).toList();
-      }
-      return [];
+      final response = await _sendRequest(
+        method: 'GET',
+        path: '/api/v1/customers/search',
+        query: {'q': term},
+      );
+      if (response == null || response is! List) return [];
+      return response.map((json) => PosCustomer.fromMap(json)).toList();
     } catch (e) {
       debugPrint('❌ API Search Customers Error: $e');
       return [];
