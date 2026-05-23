@@ -160,32 +160,39 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthenticationProvider>(context);
     final currentUser = authProvider.currentUser;
-    final masterDataProvider =
-        Provider.of<MasterDataProvider>(context, listen: false);
+    final masterDataProvider = Provider.of<MasterDataProvider>(context, listen: false);
+
+    final bool isHistory = widget.job.id.startsWith('HIST') || widget.job.id.startsWith('#HIST');
+    
+    final appBar = AppBar(
+      title: Text(isHistory ? 'งาน ${widget.job.id.replaceAll('#', '')}' : 'งาน #${widget.job.id.substring(0, 4).toUpperCase()}'),
+      actions: [
+        // Delete button for Admin
+        if (authProvider.isUserAdmin && !authProvider.isUserDriver)
+          IconButton(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: () => _confirmDeleteJob(),
+          ),
+        // Edit button for Admin or Requester
+        if (authProvider.isUserAdmin || authProvider.isUserRequester)
+          IconButton(
+            icon: const Icon(Icons.edit),
+            onPressed: () => _showEditJobDialog(widget.job),
+          ),
+      ],
+    );
+
+    if (isHistory) {
+      return Scaffold(
+        appBar: appBar,
+        body: _buildJobContent(widget.job, currentUser, masterDataProvider, authProvider),
+      );
+    }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text('งาน #${widget.job.id.substring(0, 4).toUpperCase()}'),
-        actions: [
-          // Delete button for Admin
-          if (authProvider.isUserAdmin && !authProvider.isUserDriver)
-            IconButton(
-              icon: const Icon(Icons.delete, color: Colors.red),
-              onPressed: () => _confirmDeleteJob(),
-            ),
-          // Edit button for Admin or Requester
-          if (authProvider.isUserAdmin || authProvider.isUserRequester)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: () => _showEditJobDialog(widget.job),
-            ),
-        ],
-      ),
+      appBar: appBar,
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('jobs')
-            .doc(widget.job.id)
-            .snapshots(),
+        stream: FirebaseFirestore.instance.collection('jobs').doc(widget.job.id).snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
@@ -196,106 +203,102 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
           final jobSnapshot = snapshot.data!;
           if (!jobSnapshot.exists) {
+            if (widget.job.status == 'completed') {
+               return _buildJobContent(widget.job, currentUser, masterDataProvider, authProvider);
+            }
             return const Center(child: Text('ไม่พบงานนี้แล้ว (อาจถูกลบ)'));
           }
+          
           final currentJob = Job.fromFirestore(jobSnapshot);
-
-          final hasDriver =
-              currentJob.driverId != null && currentJob.driverId!.isNotEmpty;
-          final isMyJob = currentJob.driverId == currentUser?.uid ||
-              (currentJob.driverIds.contains(currentUser?.uid)) ||
-              (currentJob.deliveryTeam.any((m) => m.id == currentUser?.uid));
-          final isCompleted = currentJob.status == 'completed';
-          final isAdmin = authProvider.isUserAdmin;
-          final isRequester = authProvider.isUserRequester;
-          final canApprove = isAdmin || isRequester;
-
-          String? driverNameDisplay;
-          if (isCompleted || hasDriver) {
-            final driverInTeam = currentJob.deliveryTeam.firstWhereOrNull(
-                (d) => d.type == 'driver' || d.type == 'staff');
-            if (driverInTeam != null) {
-              driverNameDisplay = driverInTeam.name;
-            } else {
-              final d = masterDataProvider.deliverers
-                  .firstWhereOrNull((d) => d.id == currentJob.driverId);
-              driverNameDisplay = d?.name;
-            }
-          }
-
-          return SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. Status Card
-                JobStatusCard(
-                  job: currentJob,
-                  driverName: driverNameDisplay,
-                  canApprove: canApprove,
-                ),
-
-                if (!isCompleted) ...[
-                  _buildMapButton(currentJob.customer.address,
-                      currentJob.destinationLocation),
-                ],
-
-                const SizedBox(height: 16),
-
-                // 2. Customer Info
-                _buildSectionTitle('ข้อมูลลูกค้า'),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.person, color: Colors.blue),
-                    title: Text(currentJob.customer.name,
-                        style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('โทร: ${currentJob.customer.phoneNumber}'),
-                        Text('ที่อยู่: ${currentJob.customer.address}'),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                // 3. รายละเอียดงาน & บิล
-                if ((currentJob.details != null &&
-                        currentJob.details!.isNotEmpty) ||
-                    currentJob.billImageUrl != null) ...[
-                  _buildSectionTitle('รายละเอียดงาน'),
-                  JobDetailItems(
-                    job: currentJob,
-                    onOpenImage: _openImage,
-                  ),
-                  const SizedBox(height: 24),
-                ],
-
-                // 4. Proof & Team
-                if (isCompleted) ...[
-                  _buildSectionTitle('หลักฐานการส่งงาน (Proof)'),
-                  _buildProofSection(currentJob),
-                  const SizedBox(height: 24),
-                  _buildSectionTitle('ทีมจัดส่ง & รถที่ใช้'),
-                  _buildDeliveryTeamList(currentJob.deliveryTeam),
-                  const SizedBox(height: 24),
-                ],
-
-                // 5. Action Buttons
-                if (isAdmin || isRequester || isMyJob)
-                  if (!isCompleted && currentJob.isDepartureApproved)
-                    _buildCompleteButton(currentJob),
-
-                // 6. Admin Approval Button
-                if (canApprove &&
-                    !currentJob.isDepartureApproved &&
-                    !isCompleted)
-                  _buildApprovalButton(masterDataProvider),
-              ],
-            ),
-          );
+          return _buildJobContent(currentJob, currentUser, masterDataProvider, authProvider);
         },
+      ),
+    );
+  }
+
+  Widget _buildJobContent(Job currentJob, dynamic currentUser, MasterDataProvider masterDataProvider, AuthenticationProvider authProvider) {
+    final hasDriver = currentJob.driverId != null && currentJob.driverId!.isNotEmpty;
+    final isMyJob = currentJob.driverId == currentUser?.uid ||
+        (currentJob.driverIds.contains(currentUser?.uid)) ||
+        (currentJob.deliveryTeam.any((m) => m.id == currentUser?.uid));
+    final isCompleted = currentJob.status == 'completed';
+    final isAdmin = authProvider.isUserAdmin;
+    final isRequester = authProvider.isUserRequester;
+    final canApprove = isAdmin || isRequester;
+
+    String? driverNameDisplay;
+    if (isCompleted || hasDriver) {
+      final driverInTeam = currentJob.deliveryTeam.firstWhereOrNull((d) => d.type == 'driver' || d.type == 'staff');
+      if (driverInTeam != null) {
+        driverNameDisplay = driverInTeam.name;
+      } else {
+        final d = masterDataProvider.deliverers.firstWhereOrNull((d) => d.id == currentJob.driverId);
+        driverNameDisplay = d?.name;
+      }
+    }
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. Status Card
+          JobStatusCard(
+            job: currentJob,
+            driverName: driverNameDisplay,
+            canApprove: canApprove,
+          ),
+
+          // Show Map Button for both active and completed jobs
+          _buildMapButton(currentJob.customer.address, currentJob.destinationLocation),
+
+          const SizedBox(height: 16),
+
+          // 2. Customer Info
+          _buildSectionTitle('ข้อมูลลูกค้า'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.person, color: Colors.blue),
+              title: Text(currentJob.customer.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('โทร: ${currentJob.customer.phoneNumber}'),
+                  Text('ที่อยู่: ${currentJob.customer.address}'),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 3. รายละเอียดงาน & บิล
+          if ((currentJob.details != null && currentJob.details!.isNotEmpty) || currentJob.billImageUrl != null) ...[
+            _buildSectionTitle('รายละเอียดงาน'),
+            JobDetailItems(job: currentJob, onOpenImage: _openImage),
+            const SizedBox(height: 24),
+          ],
+
+          // 4. Proof & Team
+          if (isCompleted) ...[
+            if (currentJob.proofImage != null || currentJob.proofLocation != null) ...[
+              _buildSectionTitle('หลักฐานการส่งงาน (Proof)'),
+              _buildProofSection(currentJob),
+              const SizedBox(height: 24),
+            ],
+            _buildSectionTitle('ทีมจัดส่ง & รถที่ใช้'),
+            _buildDeliveryTeamList(currentJob.deliveryTeam),
+            const SizedBox(height: 24),
+          ],
+
+          // 5. Action Buttons
+          if (isAdmin || isRequester || isMyJob)
+            if (!isCompleted && currentJob.isDepartureApproved)
+              _buildCompleteButton(currentJob),
+
+          // 6. Admin Approval Button
+          if (canApprove && !currentJob.isDepartureApproved && !isCompleted)
+            _buildApprovalButton(masterDataProvider),
+        ],
       ),
     );
   }

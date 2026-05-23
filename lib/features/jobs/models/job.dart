@@ -219,6 +219,20 @@ class Job {
       team.add(DeliveryTeamItem(id: 'h_car', name: vehiclePlate, type: 'car'));
     }
 
+    GeoPoint? destLocation;
+    final locUrl = row['locationUrl']?.toString() ?? '';
+    if (locUrl.isNotEmpty && locUrl.contains('q=')) {
+      final q = locUrl.split('q=').last;
+      final parts = q.split(',');
+      if (parts.length == 2) {
+        final lat = double.tryParse(parts[0]);
+        final lng = double.tryParse(parts[1]);
+        if (lat != null && lng != null) {
+          destLocation = GeoPoint(lat, lng);
+        }
+      }
+    }
+
     return Job(
       id: 'history_${row['id'] ?? row['orderId']}',
       localOrderId: int.tryParse(row['orderId']?.toString() ?? '0'),
@@ -236,6 +250,7 @@ class Job {
       isDepartureApproved: true,
       jobType: row['jobType']?.toString() ?? 'delivery',
       details: row['note']?.toString(),
+      destinationLocation: destLocation,
     );
   }
 
