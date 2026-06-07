@@ -53,7 +53,6 @@ class _ShopMenuScreenState extends State<ShopMenuScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('หน้าร้าน (Shop)'),
-        automaticallyImplyLeading: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
