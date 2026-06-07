@@ -58,6 +58,19 @@ class UserService {
     }
   }
 
+  // ✅ ดึงรายชื่อพนักงานทั้งหมด
+  Future<List<UserModel>> getAllUsers() async {
+    try {
+      final snapshot = await _firestore.collection('users').get();
+      final users = snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList();
+      users.sort((a, b) => a.name.compareTo(b.name));
+      return users;
+    } catch (e, stack) {
+      log('Error getting all users: $e\n$stack');
+      return [];
+    }
+  }
+
   // ✅ 1.6 ดึงรายชื่อพนักงานทั้งหมด (สำหรับทีมส่งของ - Delivery Team)
   Future<List<UserModel>> getDeliveryStaff() async {
     try {

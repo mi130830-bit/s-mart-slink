@@ -9,6 +9,8 @@ import 'package:s_link/features/auth/screens/login_screen.dart';
 import 'package:s_link/features/dashboard/screens/admin_dashboard.dart';
 import 'package:s_link/features/dashboard/screens/requester_view.dart';
 import 'package:s_link/features/dashboard/screens/driver_view.dart';
+import 'package:s_link/features/hr/screens/hr_dashboard.dart';
+import 'package:s_link/features/hr/screens/gas_station_view.dart';
 
 // Import Service & Shop Menu
 import 'package:s_link/core/services/version_check_service.dart';
@@ -47,12 +49,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final roleName = user.role.name.toLowerCase();
 
-    if (roleName == 'admin' || roleName == 'requester') {
-      // ✅ Admin & Requester get Hybrid View (Delivery + POS)
-      return PosNavigationWrapper(
-        child: roleName == 'admin'
-            ? const AdminDashboard()
-            : const RequesterView(),
+    if (roleName == 'admin') {
+      return const AdminDashboard();
+    } else if (roleName == 'hr') {
+      return const HrDashboard();
+    } else if (roleName == 'gas_station' || roleName == 'gasstation') {
+      return const GasStationView();
+    } else if (roleName == 'requester') {
+      return const PosNavigationWrapper(
+        child: RequesterView(),
       );
     } else if (roleName == 'driver') {
       return const DriverView();

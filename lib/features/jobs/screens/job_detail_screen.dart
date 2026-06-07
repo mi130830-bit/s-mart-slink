@@ -224,7 +224,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final isCompleted = currentJob.status == 'completed';
     final isAdmin = authProvider.isUserAdmin;
     final isRequester = authProvider.isUserRequester;
-    final canApprove = isAdmin || isRequester;
+    final isHr = authProvider.isUserHr;
+    final canApprove = isAdmin || isRequester || isHr;
 
     String? driverNameDisplay;
     if (isCompleted || hasDriver) {

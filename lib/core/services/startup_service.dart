@@ -2,6 +2,8 @@
 
 import 'dart:developer';
 // import 'dart:ui';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 // import 'package:firebase_app_check/firebase_app_check.dart';
@@ -137,29 +139,33 @@ class StartupService {
       );
       */
 
-      // 6. Notifications
-      await _initNotifications();
-      await setupNotificationChannel();
+      if (!kIsWeb && (Platform.isAndroid || Platform.isIOS)) {
+        // 6. Notifications
+        await _initNotifications();
+        await setupNotificationChannel();
 
-      // ขอสิทธิ์แจ้งเตือน (Android 13+)
-      await FirebaseMessaging.instance.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
+        // ขอสิทธิ์แจ้งเตือน (Android 13+)
+        await FirebaseMessaging.instance.requestPermission(
+          alert: true,
+          badge: true,
+          sound: true,
+        );
 
-      // Handle Foreground Messages
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        log('Got a message whilst in the foreground!');
-        log('Message data: ${message.data}');
+        // Handle Foreground Messages
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          log('Got a message whilst in the foreground!');
+          log('Message data: ${message.data}');
 
-        if (message.notification != null) {
-          _showNotification(message);
-        }
-      });
+          if (message.notification != null) {
+            _showNotification(message);
+          }
+        });
 
-      FirebaseMessaging.onBackgroundMessage(
-          _firebaseMessagingBackgroundHandler);
+        FirebaseMessaging.onBackgroundMessage(
+            _firebaseMessagingBackgroundHandler);
+      } else {
+        log('⚠️ Skip Notifications and Messaging on this platform (Windows/Web)');
+      }
 
       log('✅ App Initialized Successfully');
     } catch (e) {

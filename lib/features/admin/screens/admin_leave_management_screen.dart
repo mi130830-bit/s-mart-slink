@@ -44,7 +44,7 @@ class _AdminLeaveManagementScreenState
 }
 
 // ---------------------------------------------------------------------------
-// 1. หน้าจัดการ (Control View) - โค้ดเดิมที่แยกออกมา
+// 1. หน้าจัดการ (Control View) - โค้ดใหม่ แบบฟอร์มสไตล์ POS
 // ---------------------------------------------------------------------------
 class _AdminLeaveControlView extends StatefulWidget {
   const _AdminLeaveControlView();
@@ -55,26 +55,24 @@ class _AdminLeaveControlView extends StatefulWidget {
 
 class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String? _selectedUserId;
+  Map<String, dynamic>? _selectedUserData;
 
-  Stream<QuerySnapshot> _holidayLogStream(String userId) {
-    final today = DateUtils.dateOnly(DateTime.now());
-    return _firestore
-        .collection('holiday_logs')
-        .where('user_id', isEqualTo: userId)
-        .where('date', isEqualTo: Timestamp.fromDate(today))
-        .orderBy('logged_at', descending: true)
-        .limit(1)
-        .snapshots();
-  }
-
-  Future<void> _toggleLeave(
-      String userId, String userName, String userRole, bool isLeaving) async {
+  Future<void> _submitLeave(bool isLeaving) async {
+    if (_selectedUserId == null || _selectedUserData == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('กรุณาเลือกพนักงานก่อน')));
+      return;
+    }
     try {
       final action = isLeaving ? 'holiday_start' : 'holiday_end';
       final today = DateUtils.dateOnly(DateTime.now());
 
+      final String userName = _selectedUserData!['name'] ?? 'Unknown';
+      final String userRole = _selectedUserData!['role'] ?? '-';
+
       final Map<String, dynamic> data = {
-        'user_id': userId,
+        'user_id': _selectedUserId,
         'user_name': userName,
         'action': action,
         'logged_at': FieldValue.serverTimestamp(),
@@ -96,6 +94,11 @@ class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
           backgroundColor: isLeaving ? Colors.orange : Colors.green,
         ),
       );
+
+      setState(() {
+        _selectedUserId = null;
+        _selectedUserData = null;
+      });
     } catch (e) {
       log('Error toggling leave: $e');
       if (!mounted) return;
@@ -107,108 +110,110 @@ class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: _firestore
-          .collection('users')
-          .where('role', whereIn: ['driver', 'requester']).snapshots(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text('Error: ${snapshot.error}'));
-        }
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24.0),
+      child: Card(
+        elevation: 4,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'บันทึกวันลา (รายวัน)',
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.teal),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              StreamBuilder<QuerySnapshot>(
+                stream: _firestore
+                    .collection('users')
+                    .where('role', whereIn: ['driver', 'requester']).snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Error: ${snapshot.error}');
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-        final users = snapshot.data!.docs;
+                  final users = snapshot.data!.docs;
+                  if (users.isEmpty) return const Text('ไม่พบรายชื่อพนักงาน');
 
-        if (users.isEmpty) {
-          return const Center(child: Text('ไม่พบรายชื่อพนักงาน'));
-        }
-
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: users.length,
-          separatorBuilder: (ctx, i) => const Divider(),
-          itemBuilder: (context, index) {
-            final userData = users[index].data() as Map<String, dynamic>;
-            final userId = users[index].id;
-            final userName = userData['name'] ?? 'Unknown';
-            final userRole = userData['role'] ?? '-';
-            final userImage = userData['profile_image'];
-
-            return Card(
-              elevation: 2,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(12.0),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 25,
-                      backgroundImage:
-                          userImage != null ? NetworkImage(userImage) : null,
-                      child:
-                          userImage == null ? const Icon(Icons.person) : null,
+                  return DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      labelText: 'เลือกพนักงาน',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      prefixIcon: const Icon(Icons.person),
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            userName,
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                          Text(
-                            'ตำแหน่ง: $userRole',
-                            style: TextStyle(
-                                color: Colors.grey[600], fontSize: 14),
-                          ),
-                        ],
+                    initialValue: _selectedUserId,
+                    items: users.map((doc) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      return DropdownMenuItem<String>(
+                        value: doc.id,
+                        child: Text('${data['name']} (${data['role']})'),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      setState(() {
+                        _selectedUserId = val;
+                        _selectedUserData = users
+                            .firstWhere((doc) => doc.id == val)
+                            .data() as Map<String, dynamic>;
+                      });
+                    },
+                  );
+                },
+              ),
+              const SizedBox(height: 32),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _submitLeave(true),
+                      icon: const Icon(Icons.event_busy),
+                      label: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16.0),
+                        child: Text('เริ่มลาหยุด',
+                            style: TextStyle(fontSize: 16)),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
-                    StreamBuilder<QuerySnapshot>(
-                      stream: _holidayLogStream(userId),
-                      builder: (context, logSnapshot) {
-                        bool isOnLeave = false;
-
-                        if (logSnapshot.hasData &&
-                            logSnapshot.data!.docs.isNotEmpty) {
-                          final lastLog = logSnapshot.data!.docs.first.data()
-                              as Map<String, dynamic>;
-                          isOnLeave = lastLog['action'] == 'holiday_start';
-                        }
-
-                        return Column(
-                          children: [
-                            Switch(
-                              value: isOnLeave,
-                              activeTrackColor: Colors.orange,
-                              onChanged: (value) {
-                                _toggleLeave(userId, userName, userRole, value);
-                              },
-                            ),
-                            Text(
-                              isOnLeave ? 'ลาหยุด' : 'ทำงาน',
-                              style: TextStyle(
-                                  color:
-                                      isOnLeave ? Colors.orange : Colors.green,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12),
-                            )
-                          ],
-                        );
-                      },
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () => _submitLeave(false),
+                      icon: const Icon(Icons.work),
+                      label: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16.0),
+                        child: Text('กลับมาทำงาน',
+                            style: TextStyle(fontSize: 16)),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            );
-          },
-        );
-      },
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

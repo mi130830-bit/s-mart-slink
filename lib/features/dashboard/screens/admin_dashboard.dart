@@ -12,8 +12,10 @@ import 'package:s_link/features/admin/screens/driver_stats_screen.dart';
 // CreateJobScreen removed — สร้างงานจาก POS Desktop แทน
 // ✅ [เพิ่ม] Import หน้าจอประวัติการลาหยุด
 import 'package:s_link/features/admin/screens/admin_leave_management_screen.dart';
+import 'package:s_link/features/hr/screens/attendance_screen.dart' as s_link_attendance;
 
-// ✅ เปลี่ยน Import Settings ไปที่โฟลเดอร์ config
+import 'package:s_link/features/pos/screens/shop_menu_screen.dart';
+import 'package:s_link/features/settings/screens/settings_screen.dart';
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key});
@@ -120,6 +122,45 @@ class AdminDashboard extends StatelessWidget {
                               builder: (_) =>
                                   const AdminLeaveManagementScreen())),
                     ),
+                    
+                    // 9. ลงเวลาเข้างาน
+                    _buildMenuCard(
+                      context,
+                      title: 'ลงเวลาเข้างาน',
+                      icon: Icons.fingerprint,
+                      color: Colors.teal,
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  const s_link_attendance.AttendanceScreen())),
+                    ),
+                    
+                    // 10. หน้าร้าน (Shop POS)
+                    _buildMenuCard(
+                      context,
+                      title: 'หน้าร้าน (Shop)',
+                      icon: Icons.storefront,
+                      color: Colors.deepOrange,
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  const ShopMenuScreen())),
+                    ),
+
+                    // 11. ตั้งค่าระบบ (Settings)
+                    _buildMenuCard(
+                      context,
+                      title: 'ตั้งค่า (Settings)',
+                      icon: Icons.settings,
+                      color: Colors.blueGrey,
+                      onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) =>
+                                  const SettingsScreen())),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 80), // เว้นที่ให้ FAB
@@ -138,24 +179,30 @@ class AdminDashboard extends StatelessWidget {
       required VoidCallback onTap}) {
     return Card(
       elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircleAvatar(
-              // 🛠️ แก้ไข: เปลี่ยน color.withOpacity(0.2) เป็น color.withValues(alpha: 0.2)
-              backgroundColor: color.withValues(alpha: 0.2),
-              radius: 30,
-              child: Icon(icon, size: 30, color: color),
-            ),
-            const SizedBox(height: 12),
-            Text(title,
+        splashColor: color.withValues(alpha: 0.2),
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border(bottom: BorderSide(color: color, width: 4)),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 48, color: color),
+              const SizedBox(height: 12),
+              Text(
+                title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-          ],
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

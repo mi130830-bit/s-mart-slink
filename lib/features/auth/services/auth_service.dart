@@ -46,7 +46,12 @@ class AuthService {
         }
 
         // 3. ดึงข้อมูลกลับมาเพื่อยืนยัน
-        return await _userService.getUserById(user.uid);
+        final createdUser = await _userService.getUserById(user.uid);
+        
+        // 4. บังคับ Logout ทันทีเพื่อไม่ให้ค้างหน้า Pending
+        await _auth.signOut();
+        
+        return createdUser;
       }
       return null;
     } on FirebaseAuthException catch (e) {

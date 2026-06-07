@@ -3,7 +3,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_messaging/firebase_messaging.dart'; // ✅ Import เพิ่มเติม
-import 'package:cloud_firestore/cloud_firestore.dart'; // ✅ Import เพิ่มเติม
 
 import 'package:s_link/features/jobs/providers/job_provider.dart';
 import 'package:s_link/features/auth/providers/auth_provider.dart';
@@ -12,6 +11,7 @@ import 'package:s_link/features/jobs/screens/job_detail_screen.dart';
 import 'package:s_link/features/shop_log/screens/create_work_log_screen.dart';
 
 import 'package:s_link/features/dashboard/screens/pickup_screen.dart'; // ✅ Import PickupScreen
+import 'package:s_link/features/hr/screens/attendance_screen.dart' as s_link_attendance;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:s_link/core/config/app_constants.dart';
@@ -25,8 +25,6 @@ class DriverView extends StatefulWidget {
 }
 
 class _DriverViewState extends State<DriverView> {
-  // ✅ [เพิ่ม] ตัวแปรเก็บสถานะการลาหยุด (ดึงจาก Firestore)
-  bool _isOnHoliday = false;
 
   @override
   void initState() {
@@ -34,95 +32,11 @@ class _DriverViewState extends State<DriverView> {
     _checkInitialHolidayStatus();
   }
 
-  // ✅ [เพิ่ม] ฟังก์ชันเช็คสถานะการลาหยุดเริ่มต้น
   Future<void> _checkInitialHolidayStatus() async {
-    final authProvider =
-        Provider.of<AuthenticationProvider>(context, listen: false);
-    final userId = authProvider.currentUser?.uid;
-    if (userId == null) return;
-
-    // เช็คจาก logs ล่าสุดว่ามีวันปัจจุบันที่ยังไม่ถูก "ยกเลิก" หรือไม่
-    final today = DateUtils.dateOnly(DateTime.now());
-
-    // ค้นหา log ที่เป็น 'holiday_start' ของวันนี้ และยังไม่มี log 'holiday_end' ที่ตรงกัน
-    final snapshot = await FirebaseFirestore.instance
-        .collection('holiday_logs')
-        .where('user_id', isEqualTo: userId)
-        .where('date', isEqualTo: Timestamp.fromDate(today))
-        .where('action', isEqualTo: 'holiday_start')
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isNotEmpty && mounted) {
-      setState(() {
-        _isOnHoliday = true;
-      });
-    }
-  }
-
-  // ✅ [เพิ่ม] ฟังก์ชันจัดการการเปิด/ปิดโหมดลาหยุด
-  Future<void> _toggleHolidayMode(bool newValue) async {
-    final authProvider =
-        Provider.of<AuthenticationProvider>(context, listen: false);
-    final userId = authProvider.currentUser?.uid;
-
-    if (userId == null) return;
-
-    // ป้องกันการกดซ้ำซ้อน
-    if (newValue == _isOnHoliday) return;
-
-    // 1. อัปเดตสถานะใน UI ทันที (Optimistic Update)
-    setState(() => _isOnHoliday = newValue);
-
     try {
-      final messaging = FirebaseMessaging.instance;
-      const topic = 'driver_alerts';
-      final today = DateUtils.dateOnly(DateTime.now());
-
-      String action = '';
-      String message = '';
-
-      if (newValue) {
-        // เปิดโหมดลาหยุด: Unsubscribe จาก Topic และบันทึก Log
-        await messaging.unsubscribeFromTopic(topic);
-        action = 'holiday_start';
-        message = 'เปิดโหมดลาหยุดสำเร็จ! จะไม่ได้รับแจ้งเตือนงานใหม่';
-      } else {
-        // ปิดโหมดลาหยุด: Subscribe กลับไป Topic และบันทึก Log
-        await messaging.subscribeToTopic(topic);
-        action = 'holiday_end';
-        message = 'ปิดโหมดลาหยุดสำเร็จ! พร้อมรับงานใหม่';
-      }
-
-      // 2. บันทึก Log การลาหยุดลง Firestore
-      await FirebaseFirestore.instance.collection('holiday_logs').add({
-        'user_id': userId,
-        'user_name': authProvider.currentUser!.name,
-        'action': action, // 'holiday_start' หรือ 'holiday_end'
-        'logged_at': FieldValue.serverTimestamp(),
-        // บันทึกวันที่ที่หยุด/กลับมา เพื่อให้ Admin ดูประวัติได้ง่าย (ใช้เป็นวันที่ปัจจุบัน)
-        'date': Timestamp.fromDate(today),
-      });
-
-      // 3. แสดง SnackBar
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(message),
-              backgroundColor: newValue ? Colors.orange : Colors.green),
-        );
-      }
+      await FirebaseMessaging.instance.subscribeToTopic('driver_alerts');
     } catch (e) {
-      debugPrint('Error toggling holiday mode: $e');
-      // ถ้า Error ให้ย้อนสถานะกลับใน UI
-      if (mounted) {
-        setState(() => _isOnHoliday = !newValue);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('เกิดข้อผิดพลาดในการตั้งค่า: $e'),
-              backgroundColor: Colors.red),
-        );
-      }
+      debugPrint('Error subscribing: $e');
     }
   }
 
@@ -137,19 +51,15 @@ class _DriverViewState extends State<DriverView> {
           title: const Text('พนักงานหลังบ้าน'),
           centerTitle: false,
           actions: [
-            // ✅ [เพิ่ม] ปุ่ม/สวิตช์ โหมดลาหยุด
-            Row(
-              children: [
-                const Text('ลาหยุด',
-                    style: TextStyle(fontSize: 12, color: Colors.grey)),
-                Switch(
-                  value: _isOnHoliday,
-                  onChanged: _toggleHolidayMode,
-                  // 🛠️ แก้ไข: เปลี่ยน activeColor เป็น activeThumbColor
-                  activeThumbColor: Colors.orange,
-                  inactiveThumbColor: Colors.green,
-                ),
-              ],
+            IconButton(
+              icon: const Icon(Icons.fingerprint),
+              tooltip: 'ลงเวลาเข้างาน',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const s_link_attendance.AttendanceScreen()),
+                );
+              },
             ),
             IconButton(
               icon: const Icon(Icons.settings),

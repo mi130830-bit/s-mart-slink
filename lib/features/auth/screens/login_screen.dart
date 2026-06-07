@@ -33,9 +33,20 @@ class _LoginScreenState extends State<LoginScreen> {
       final authProvider =
           Provider.of<AuthenticationProvider>(context, listen: false);
 
+      String username = _emailController.text.trim().toLowerCase();
+      String loginEmail;
+      
+      if (username.contains('@')) {
+        // ถ้าระบุมี @ มาด้วย แสดงว่าเป็นระบบอีเมลเก่า (ให้เข้าได้เลย)
+        loginEmail = username;
+      } else {
+        // ถ้าไม่มี @ แสดงว่าเป็นระบบ Username ใหม่ ให้เติม Dummy Domain
+        loginEmail = '$username@s-link.local';
+      }
+
       try {
         await authProvider.login(
-            _emailController.text.trim(), _passwordController.text.trim());
+            loginEmail, _passwordController.text.trim());
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -93,14 +104,18 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 40),
                 TextFormField(
                   controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  keyboardType: TextInputType.text,
                   decoration: const InputDecoration(
-                    labelText: 'Email',
+                    labelText: 'Username',
                     border: OutlineInputBorder(),
-                    prefixIcon: Icon(Icons.email),
+                    prefixIcon: Icon(Icons.person),
                   ),
-                  validator: (val) =>
-                      val!.isEmpty ? 'Please enter email' : null,
+                  validator: (val) {
+                    if (val!.isEmpty) return 'กรุณาระบุ Username';
+                    if (val.contains(RegExp(r'[ก-๙]'))) return 'ห้ามใช้ภาษาไทย';
+                    if (val.contains(' ')) return 'ห้ามเว้นวรรค';
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextFormField(

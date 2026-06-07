@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'package:s_link/features/jobs/providers/job_provider.dart';
 // CreateJobScreen removed — สร้างงานจาก POS Desktop แทน
 import 'package:s_link/features/jobs/screens/job_detail_screen.dart';
-import 'package:s_link/features/jobs/models/job.dart'; // ✅ เพิ่ม import Model Job
+import 'package:s_link/features/jobs/models/job.dart';
 import 'package:s_link/features/alerts/screens/stock_alert_screen.dart';
+import 'package:s_link/features/hr/screens/attendance_screen.dart' as s_link_attendance;
 
 class RequesterView extends StatefulWidget {
   const RequesterView({super.key});
@@ -23,7 +23,6 @@ class RequesterView extends StatefulWidget {
 class _RequesterViewState extends State<RequesterView>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  bool _isOnHoliday = false;
 
   @override
   void initState() {
@@ -40,91 +39,9 @@ class _RequesterViewState extends State<RequesterView>
 
   Future<void> _checkInitialHolidayStatus() async {
     try {
-      final authProvider =
-          Provider.of<AuthenticationProvider>(context, listen: false);
-      final userId = authProvider.currentUser?.uid;
-      if (userId == null) return;
-
-      // ✅ เพิ่ม Timeout ป้องกันค้าง
-      final snapshot = await FirebaseFirestore.instance
-          .collection('holiday_logs')
-          .where('user_id', isEqualTo: userId)
-          .orderBy('logged_at', descending: true)
-          .limit(1)
-          .get()
-          .timeout(const Duration(seconds: 5));
-
-      if (snapshot.docs.isNotEmpty) {
-        final lastAction = snapshot.docs.first.data()['action'];
-        if (lastAction == 'holiday_start' && mounted) {
-          setState(() {
-            _isOnHoliday = true;
-          });
-        } else {
-          // ✅ Ensure subscribed if not on holiday
-          await FirebaseMessaging.instance.subscribeToTopic('requester_alerts');
-        }
-      } else {
-        // ✅ Default to subscribed if no logs found
-        await FirebaseMessaging.instance.subscribeToTopic('requester_alerts');
-      }
+      await FirebaseMessaging.instance.subscribeToTopic('requester_alerts');
     } catch (e) {
-      debugPrint('Error checking holiday status: $e');
-    }
-  }
-
-  Future<void> _toggleHolidayMode(bool newValue) async {
-    final authProvider =
-        Provider.of<AuthenticationProvider>(context, listen: false);
-    final userId = authProvider.currentUser?.uid;
-
-    if (userId == null) return;
-
-    setState(() => _isOnHoliday = newValue);
-
-    try {
-      final messaging = FirebaseMessaging.instance;
-      const topic = 'requester_alerts';
-      final today = DateUtils.dateOnly(DateTime.now());
-
-      String action = '';
-      String message = '';
-
-      if (newValue) {
-        await messaging.unsubscribeFromTopic(topic);
-        action = 'holiday_start';
-        message = 'เปิดโหมดลาหยุดสำเร็จ! (พักผ่อนให้เต็มที่นะครับ)';
-      } else {
-        await messaging.subscribeToTopic(topic);
-        action = 'holiday_end';
-        message = 'ปิดโหมดลาหยุดสำเร็จ! พร้อมทำงาน';
-      }
-
-      await FirebaseFirestore.instance.collection('holiday_logs').add({
-        'user_id': userId,
-        'user_name': authProvider.currentUser!.name,
-        'role': 'requester',
-        'action': action,
-        'logged_at': FieldValue.serverTimestamp(),
-        'date': Timestamp.fromDate(today),
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(message),
-              backgroundColor: newValue ? Colors.orange : Colors.green),
-        );
-      }
-    } catch (e) {
-      debugPrint('Error toggling holiday mode: $e');
-      if (mounted) {
-        setState(() => _isOnHoliday = !newValue);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('เกิดข้อผิดพลาด: $e'), backgroundColor: Colors.red),
-        );
-      }
+      debugPrint('Error subscribing: $e');
     }
   }
 
@@ -136,18 +53,15 @@ class _RequesterViewState extends State<RequesterView>
       appBar: AppBar(
         title: const Text('ส.บริการ (พนักงานหน้าร้าน)'),
         actions: [
-          Row(
-            children: [
-              const Text('ลาหยุด',
-                  style: TextStyle(fontSize: 12, color: Colors.grey)),
-              Switch(
-                value: _isOnHoliday,
-                onChanged: _toggleHolidayMode,
-                // ✅ แก้ไขตรงนี้ครับ: เปลี่ยน activeColor เป็น activeThumbColor
-                activeThumbColor: Colors.orange,
-                inactiveThumbColor: Colors.green,
-              ),
-            ],
+          IconButton(
+            icon: const Icon(Icons.fingerprint),
+            tooltip: 'ลงเวลาเข้างาน',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const s_link_attendance.AttendanceScreen()),
+              );
+            },
           ),
           IconButton(
             onPressed: () => authProvider.logout(),

@@ -165,6 +165,11 @@ class AuthenticationProvider with ChangeNotifier {
     return _currentUser?.role.name.toLowerCase() == 'requester';
   }
 
+  // ✅ [เพิ่มใหม่] ตรวจสอบสถานะ HR
+  bool get isUserHr {
+    return _currentUser?.role.name.toLowerCase() == 'hr';
+  }
+
   // ✅ [เพิ่มใหม่] ตรวจสอบสถานะรอการอนุมัติ
   bool get isUserPending {
     return _currentUser?.role.name.toLowerCase() == 'pending';

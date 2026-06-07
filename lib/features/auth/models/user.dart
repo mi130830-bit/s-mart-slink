@@ -41,6 +41,12 @@ class UserModel {
       case 'driver':
         parsedRole = UserRole.driver;
         break;
+      case 'hr':
+        parsedRole = UserRole.hr;
+        break;
+      case 'gas_station':
+        parsedRole = UserRole.gasStation;
+        break;
       case 'pending':
         parsedRole = UserRole.pending;
         break;
@@ -58,10 +64,14 @@ class UserModel {
   }
 
   Map<String, dynamic> toFirestore() {
+    String roleStr = role.name;
+    if (role == UserRole.gasStation) {
+      roleStr = 'gas_station';
+    }
     return {
       'email': email,
       'name': name,
-      'role': role.name,
+      'role': roleStr,
       'fcmToken': fcmToken,
     };
   }

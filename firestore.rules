@@ -15,12 +15,14 @@ service cloud.firestore {
               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role : 'guest');
     }
     
+    function isHr() { return isSignedIn() && getRole() == 'hr'; }
+    
     function isAdmin() { 
       return isPOS() || (isSignedIn() && getRole() == 'admin'); 
     }
     
     function isApproved() { 
-      return isPOS() || (isSignedIn() && (getRole() == 'admin' || getRole() == 'driver' || getRole() == 'requester')); 
+      return isPOS() || (isSignedIn() && (getRole() == 'admin' || getRole() == 'driver' || getRole() == 'requester' || getRole() == 'hr' || getRole() == 'gas_station' || getRole() == 'gasStation')); 
     }
 
     // --- Collections ---
@@ -28,7 +30,10 @@ service cloud.firestore {
     // ✅ Allow Approved users (including Requesters) to read users list for selecting delivery team
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isApproved());
-      allow write: if isAdmin();
+      // ✅ Allow new users to register themselves, but force role to 'pending' for security
+      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'pending';
+      // ✅ Only Admins can edit roles or delete users
+      allow update, delete: if isAdmin();
     }
 
     match /jobs/{jobId} {
@@ -84,6 +89,31 @@ service cloud.firestore {
     match /commands/{id} {
       allow read, create, update: if true;
       allow delete: if false;
+    }
+
+    // ✅ Attendance Logs — เฉพาะ approved user เขียนได้เฉพาะ log ของตัวเอง ยกเว้น HR/Admin
+    match /attendance_logs/{logId} {
+      allow read: if isApproved();
+      allow create: if isApproved() && (request.resource.data.user_id == request.auth.uid || isAdmin() || isHr());
+      allow update: if isApproved() && (isAdmin() || isHr() || resource.data.user_id == request.auth.uid);
+      allow delete: if isAdmin() || isHr();
+    }
+
+    // ✅ HR Collections
+    match /advance_money_requests/{id} {
+      allow read, write: if isAdmin() || isHr();
+    }
+    
+    match /leave_requests/{id} {
+      allow read: if isApproved();
+      allow create: if isApproved() && (request.resource.data.user_id == request.auth.uid || isAdmin() || isHr());
+      allow update: if isApproved() && (isAdmin() || isHr() || resource.data.user_id == request.auth.uid);
+      allow delete: if isAdmin() || isHr();
+    }
+
+    match /holiday_logs/{id} {
+      allow read: if isApproved();
+      allow write: if isApproved();
     }
 
     match /{document=**} {

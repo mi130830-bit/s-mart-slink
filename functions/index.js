@@ -550,6 +550,40 @@ exports.onJobStatusChanged_LineOA = onDocumentUpdated("jobs/{jobId}", async (eve
 
 
 // =========================================================
+// 8. Auto-Cleanup Leave Requests
+// =========================================================
+exports.cleanupLeaveRequests = onSchedule({
+    schedule: "every 24 hours",
+    timeZone: "Asia/Bangkok",
+    timeoutSeconds: 120
+}, async (event) => {
+    try {
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+        const snapshot = await getFirestore().collection("leave_requests")
+            .where("created_at", "<", Timestamp.fromDate(threeDaysAgo))
+            .get();
+
+        if (snapshot.empty) {
+            console.log("No old leave_requests to delete.");
+            return null;
+        }
+
+        const batch = getFirestore().batch();
+        snapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+
+        await batch.commit();
+        console.log(`✅ Deleted ${snapshot.size} old leave_requests.`);
+    } catch (e) {
+        console.error("❌ Error cleaning up leave_requests:", e);
+    }
+    return null;
+});
+
+// =========================================================
 // 4. setUserRole: ฟังก์ชันสำหรับ Admin
 // =========================================================
 exports.setUserRole = onCall(async (request) => {
@@ -722,5 +756,52 @@ exports.onWorkLogCreated = onDocumentCreated("shop_work_logs/{logId}", async (ev
     } catch (e) {
         console.error("❌ Error sending Admin alert for work log:", e);
     }
+    return null;
+});
+
+// =========================================================
+// 7. cleanupAdvanceMoney: ลบข้อมูลเบิกเงินที่อนุมัติ/ไม่อนุมัติเกิน 7 วัน
+// =========================================================
+exports.cleanupAdvanceMoney = onSchedule({
+    schedule: "0 1 * * *", // รันตอนตี 1 ของทุกวัน
+    timeZone: "Asia/Bangkok",
+    region: "asia-southeast1",
+}, async (event) => {
+    const db = getFirestore();
+    const expireDate = new Date();
+    expireDate.setDate(expireDate.getDate() - 3);
+
+    try {
+        const snapshot = await db.collection("advance_money_requests")
+            .where("updated_at", "<", Timestamp.fromDate(expireDate))
+            .get();
+
+        if (snapshot.empty) {
+            console.log("✅ No old advance_money_requests to clean up.");
+            return null;
+        }
+
+        let deletedCount = 0;
+        const batch = db.batch();
+        
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            // ลบเฉพาะที่ อนุมัติ หรือ ไม่อนุมัติ แล้วเท่านั้น
+            if (data.status === "approved" || data.status === "rejected") {
+                batch.delete(doc.ref);
+                deletedCount++;
+            }
+        });
+
+        if (deletedCount > 0) {
+            await batch.commit();
+            console.log(`✅ Cleaned up ${deletedCount} advance_money_requests (older than 7 days)`);
+        } else {
+            console.log("✅ No eligible advance_money_requests to clean up.");
+        }
+    } catch (e) {
+        console.error("❌ Error cleaning up advance_money_requests:", e);
+    }
+    
     return null;
 });

@@ -96,7 +96,7 @@ class UserApprovalScreen extends StatelessWidget {
                                     style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold)),
-                                Text(user.email,
+                                Text('Username: ${user.email.replaceAll('@s-link.local', '')}',
                                     style: const TextStyle(color: Colors.grey)),
                               ],
                             ),
@@ -107,32 +107,83 @@ class UserApprovalScreen extends StatelessWidget {
                       const Text('เลือกตำแหน่งเพื่ออนุมัติ:',
                           style: TextStyle(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
-                      Row(
+                      Column(
                         children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () =>
-                                  _updateUserRole(context, user.uid, 'driver'),
-                              icon: const Icon(Icons.local_shipping),
-                              label: const Text('Driver'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
-                                foregroundColor: Colors.white,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () =>
+                                      _updateUserRole(context, user.uid, 'driver'),
+                                  icon: const Icon(Icons.local_shipping),
+                                  label: const Text('Driver'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blue,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _updateUserRole(
+                                      context, user.uid, 'requester'),
+                                  icon: const Icon(Icons.assignment_ind),
+                                  label: const Text('Requester'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.orange,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () => _updateUserRole(
-                                  context, user.uid, 'requester'),
-                              icon: const Icon(Icons.assignment_ind),
-                              label: const Text('Requester'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.orange,
-                                foregroundColor: Colors.white,
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () =>
+                                      _updateUserRole(context, user.uid, 'hr'),
+                                  icon: const Icon(Icons.group),
+                                  label: const Text('HR'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.purple,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _updateUserRole(
+                                      context, user.uid, 'gas_station'),
+                                  icon: const Icon(Icons.local_gas_station),
+                                  label: const Text('Gas Station'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.teal,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: () => _updateUserRole(
+                                      context, user.uid, 'admin'),
+                                  icon: const Icon(Icons.admin_panel_settings),
+                                  label: const Text('Admin (ผู้ดูแลระบบ)'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.redAccent,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       )
