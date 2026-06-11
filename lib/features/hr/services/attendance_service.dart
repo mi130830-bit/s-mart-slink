@@ -106,12 +106,13 @@ class AttendanceService {
     await _firestore.collection(_collection).doc(docId).set(logEntry.toJson());
   }
 
-  Future<void> checkOut(String userId, double lat, double lng) async {
+  Future<void> checkOut(String userId, double lat, double lng, {DateTime? outTime}) async {
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final docId = '${userId}_$today';
+    final actualOut = outTime ?? DateTime.now();
 
     await _firestore.collection(_collection).doc(docId).update({
-      'check_out_time': DateTime.now().toIso8601String(),
+      'check_out_time': actualOut.toIso8601String(),
       'check_out_lat': lat,
       'check_out_lng': lng,
       'updated_at': DateTime.now().toIso8601String(),

@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/shop_log/work_log_history_screen.dart
 
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -69,16 +70,12 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> {
       // ✅ Check 2: เช็คว่าหน้าจอยังอยู่ไหม หลัง await เสร็จ ก่อนแสดง SnackBar
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ลบรายการเรียบร้อย')),
-      );
+      SnackbarUtils.showLeft(context, 'ลบรายการเรียบร้อย');
     } catch (e) {
       // ✅ Check 3: เช็คอีกรอบกรณี Error
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
     }
   }
 

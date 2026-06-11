@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/jobs/complete_job_form.dart
 
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -172,11 +173,7 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
       await _submitForm(proofLocation);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('ระบุพิกัดไม่สำเร็จ: $e'),
-              backgroundColor: Colors.orange),
-        );
+        SnackbarUtils.showLeft(context, 'ระบุพิกัดไม่สำเร็จ: $e', isError: true);
         setState(() => _isLoading = false);
       }
     }
@@ -245,11 +242,7 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
             ? '✅ บันทึกงานไว้ออฟไลน์แล้ว (จะซิงค์เมื่อมีเน็ต)'
             : '✅ ปิดงานเรียบร้อยแล้ว!';
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(message),
-              backgroundColor: isOffline ? Colors.orange : Colors.green),
-        );
+        SnackbarUtils.showLeft(context, message);
         Navigator.of(context).pop();
       }
     } catch (e) {
@@ -260,9 +253,7 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
   }
 
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
+    SnackbarUtils.showLeft(context, message, isError: true);
     setState(() => _isLoading = false);
   }
 

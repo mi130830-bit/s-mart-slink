@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -26,32 +27,18 @@ class _ShortageLogsViewState extends State<ShortageLogsView> {
 
   void _copyToClipboard(BuildContext context, String text) {
     Clipboard.setData(ClipboardData(text: text));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('คัดลอก "$text" แล้ว'),
-        duration: const Duration(seconds: 1),
-        backgroundColor: Colors.teal,
-      ),
-    );
+    SnackbarUtils.showLeft(context, 'คัดลอก "$text" แล้ว');
   }
 
   Future<void> _markAsOrdered(BuildContext context, dynamic alertId) async {
     try {
       await Provider.of<AlertLogProvider>(context, listen: false).markAsOrdered(alertId);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('อัปเดตสถานะเป็น "สั่งแล้ว"'),
-            duration: Duration(seconds: 1),
-            backgroundColor: Colors.blue,
-          ),
-        );
+        SnackbarUtils.showLeft(context, 'อัปเดตสถานะเป็น "สั่งแล้ว"');
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
       }
     }
   }
@@ -60,19 +47,11 @@ class _ShortageLogsViewState extends State<ShortageLogsView> {
     try {
       await Provider.of<AlertLogProvider>(context, listen: false).markAsDone(alertId);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ลบรายการเรียบร้อย'),
-            duration: Duration(seconds: 1),
-            backgroundColor: Colors.red,
-          ),
-        );
+        SnackbarUtils.showLeft(context, 'ลบรายการเรียบร้อย', isError: true);
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
       }
     }
   }

@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -71,11 +72,7 @@ class ConnectionSettingsSection extends StatelessWidget {
                     await StartupService.setupNotificationChannel();
                     if (context.mounted) {
                       Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(
-                                'บันทึกเสียง "$tempSelected" แล้ว (จะมีผลกับการแจ้งเตือนใหม่)')),
-                      );
+                      SnackbarUtils.showLeft(context, 'บันทึกเสียง "$tempSelected" แล้ว (จะมีผลกับการแจ้งเตือนใหม่)');
                     }
                   },
                   child: const Text('บันทึก'),
@@ -146,9 +143,7 @@ class ConnectionSettingsSection extends StatelessWidget {
                                     await prefs.setString('promptpay_id', val);
                                     if (context.mounted) {
                                       Navigator.pop(ctx);
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                              content: Text('บันทึกเรียบร้อย')));
+                                      SnackbarUtils.showLeft(context, 'บันทึกเรียบร้อย');
                                     }
                                   }
                                 },
@@ -211,9 +206,7 @@ class ConnectionSettingsSection extends StatelessWidget {
                                   }
                                   if (context.mounted) {
                                     Navigator.pop(ctx);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                            content: Text('บันทึกเรียบร้อย')));
+                                    SnackbarUtils.showLeft(context, 'บันทึกเรียบร้อย');
                                   }
                                 },
                                 child: const Text('บันทึก')),

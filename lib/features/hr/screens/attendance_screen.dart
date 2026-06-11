@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -81,26 +82,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         log('AttendanceScreen: Error loading today log: $e');
         if (mounted) {
           setState(() => _isLoading = false);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('โหลดข้อมูลไม่สำเร็จ: ${e.toString().contains('TimeoutException') ? 'เชื่อมต่อช้า กรุณาลองใหม่' : e.toString()}'),
-              action: SnackBarAction(
-                label: 'ลองใหม่',
-                onPressed: () {
-                  setState(() => _isLoading = true);
-                  _loadTodayLog();
-                },
-              ),
-            ),
-          );
+          SnackbarUtils.showLeft(context, 'โหลดข้อมูลไม่สำเร็จ: ${e.toString().contains('TimeoutException') ? 'เชื่อมต่อช้า กรุณาลองใหม่' : e.toString()}', isError: true);
         }
       }
     } else {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ไม่พบข้อมูลผู้ใช้ กรุณาล็อกอินใหม่')),
-        );
+        SnackbarUtils.showLeft(context, 'ไม่พบข้อมูลผู้ใช้ กรุณาล็อกอินใหม่', isError: true);
       }
     }
   }

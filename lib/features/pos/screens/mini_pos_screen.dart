@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -60,9 +61,7 @@ class _MiniPosScreenState extends State<MiniPosScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -262,12 +261,7 @@ class _MiniPosScreenState extends State<MiniPosScreen> {
           onPressed: () {
             context.read<CartProvider>().addItem(product);
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('เพิ่ม ${product.name} แล้ว'),
-                duration: const Duration(seconds: 1),
-              ),
-            );
+            SnackbarUtils.showLeft(context, 'เพิ่ม ${product.name} แล้ว');
           },
         ),
         onTap: () {

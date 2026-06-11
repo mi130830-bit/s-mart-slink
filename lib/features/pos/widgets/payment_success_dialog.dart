@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -52,13 +53,7 @@ class _PaymentSuccessDialogState extends State<PaymentSuccessDialog> {
 
       debugPrint('✅ [S-Link] Command Sent Successfully! Doc ID: ${docRef.id}');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('🖨️ ส่งคำสั่งพิมพ์ไปที่ $posDeviceId สำเร็จ'),
-            duration: const Duration(seconds: 2),
-            backgroundColor: Colors.blue,
-          ),
-        );
+        SnackbarUtils.showLeft(context, '🖨️ ส่งคำสั่งพิมพ์ไปที่ $posDeviceId สำเร็จ');
       }
     } catch (e) {
       debugPrint('❌ Send Print Command Error: $e');

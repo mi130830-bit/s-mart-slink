@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -78,37 +79,21 @@ class _PaymentScreenState extends State<PaymentScreen> {
     // Validation
     if (_paymentMethod == 'CASH' && _receivedAmount < total) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('ยอดเงินรับไม่เพียงพอ (Insufficient Cash)')),
-      );
+      SnackbarUtils.showLeft(context, 'ยอดเงินรับไม่เพียงพอ (Insufficient Cash)');
       return;
     }
 
     // CREDIT requires a customer
     if (_paymentMethod == 'CREDIT' && cart.customer == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('การขายสินเชื่อต้องระบุลูกค้า (Select customer first)'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 3),
-        ),
-      );
+      SnackbarUtils.showLeft(context, 'การขายสินเชื่อต้องระบุลูกค้า (Select customer first)');
       return;
     }
 
     // New Validation: Delivery requires Customer
     if (_isDelivery && cart.customer == null) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'การส่งของด่วนต้องระบุลูกค้า (Please select customer for delivery)'),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 3),
-        ),
-      );
+      SnackbarUtils.showLeft(context, 'การส่งของด่วนต้องระบุลูกค้า (Please select customer for delivery)');
       return; // Stop here, do not create order
     }
 
@@ -208,11 +193,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
             }
           } catch (e) {
             if (!mounted) return;
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text('สร้างงานส่งของล้มเหลว: $e'),
-                  backgroundColor: Colors.red),
-            );
+            SnackbarUtils.showLeft(context, 'สร้างงานส่งของล้มเหลว: $e', isError: true);
           }
         }
 
@@ -236,9 +217,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

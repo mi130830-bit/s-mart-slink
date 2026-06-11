@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:collection/collection.dart';
 import 'package:s_link/features/auth/models/user.dart';
@@ -174,7 +175,7 @@ class _ApproveDepartureDialogState extends State<ApproveDepartureDialog> {
         ElevatedButton(
           onPressed: () {
             if (_tempDriverIds.isEmpty) {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กรุณาเลือกทีมงานอย่างน้อย 1 คน')));
+              SnackbarUtils.showLeft(context, 'กรุณาเลือกทีมงานอย่างน้อย 1 คน');
               return;
             }
             widget.onConfirm(_tempDriverIds, _tempVehicleIds);

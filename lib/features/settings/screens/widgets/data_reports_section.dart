@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -88,12 +89,7 @@ class DataReportsSection extends StatelessWidget {
     } catch (e) {
       debugPrint('Export Error: $e');
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Export Failed: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        SnackbarUtils.showLeft(context, '❌ Export Failed: $e', isError: true);
       }
     }
   }
@@ -133,22 +129,11 @@ class DataReportsSection extends StatelessWidget {
       final deletedCount = await jobProvider.deleteExportedCompletedJobs();
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ ล้างข้อมูลสำเร็จ: ลบไปแล้ว $deletedCount รายการ'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        SnackbarUtils.showLeft(context, '✅ ล้างข้อมูลสำเร็จ: ลบไปแล้ว $deletedCount รายการ');
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Error: ลบไม่สำเร็จ ($e)'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        SnackbarUtils.showLeft(context, '❌ Error: ลบไม่สำเร็จ ($e)', isError: true);
       }
     }
   }

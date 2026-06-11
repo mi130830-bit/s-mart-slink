@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 
@@ -79,9 +80,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -310,8 +309,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
 
                 try {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('กำลังบันทึก...')));
+                  SnackbarUtils.showLeft(context, 'กำลังบันทึก...');
 
                   await _apiService.updateProduct(product.id, {
                     'name': newName,
@@ -321,17 +319,11 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   });
 
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('แก้ไขสำเร็จ'),
-                    backgroundColor: Colors.green,
-                  ));
+                  SnackbarUtils.showLeft(context, 'แก้ไขสำเร็จ');
                   _fetchProducts(refresh: true);
                 } catch (e) {
                   if (!mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('Error: $e'),
-                    backgroundColor: Colors.red,
-                  ));
+                  SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
                 }
               }
             },
@@ -407,9 +399,7 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                   try {
                     // Show Loading
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('กำลังบันทึก...')),
-                    );
+                    SnackbarUtils.showLeft(context, 'กำลังบันทึก...');
 
                     await _apiService.adjustStock(
                       productId: product.id,
@@ -418,23 +408,13 @@ class _ProductCatalogScreenState extends State<ProductCatalogScreen> {
                     );
 
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('บันทึกสำเร็จ'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
+                    SnackbarUtils.showLeft(context, 'บันทึกสำเร็จ');
 
                     // Refresh list to show new stock
                     _fetchProducts(refresh: true);
                   } catch (e) {
                     if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('เกิดข้อผิดพลาด: $e'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
+                    SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
                   }
                 }
               },

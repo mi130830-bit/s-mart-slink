@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/auth/login_screen.dart
 
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:s_link/features/auth/providers/auth_provider.dart';
@@ -49,9 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
             loginEmail, _passwordController.text.trim());
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Login Failed: ${e.toString()}')),
-          );
+          SnackbarUtils.showLeft(context, 'Login Failed: ${e.toString()}');
         }
       }
     }

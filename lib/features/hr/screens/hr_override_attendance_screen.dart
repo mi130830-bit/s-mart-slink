@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -21,12 +22,14 @@ class _HrOverrideAttendanceScreenState extends State<HrOverrideAttendanceScreen>
   Future<void> _showOverrideDialog(UserModel user, AttendanceLog? existingLog) async {
     final now = DateTime.now();
     bool isCheckIn = existingLog == null || existingLog.checkInTime == null;
+    final checkoutTime = DateTime(now.year, now.month, now.day, 17, 0);
+    final displayTime = isCheckIn ? now : checkoutTime;
 
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(isCheckIn ? 'ลงเวลาเข้างานแทน' : 'ลงเวลาออกงานแทน'),
-        content: Text('ยืนยันลงเวลาให้ ${user.name} ในเวลา ${DateFormat('HH:mm').format(now)} ใช่หรือไม่?'),
+        content: Text('ยืนยันลงเวลาให้ ${user.name} ในเวลา ${DateFormat('HH:mm').format(displayTime)} ใช่หรือไม่?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -65,19 +68,15 @@ class _HrOverrideAttendanceScreenState extends State<HrOverrideAttendanceScreen>
         );
         await _attendanceService.checkIn(log);
       } else {
-        await _attendanceService.checkOut(user.id, lat, lng);
+        await _attendanceService.checkOut(user.id, lat, lng, outTime: checkoutTime);
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('บันทึกเวลาแทนสำเร็จ'), backgroundColor: Colors.green),
-        );
+        SnackbarUtils.showLeft(context, 'บันทึกเวลาแทนสำเร็จ');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-        );
+        SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
       }
     }
   }
@@ -146,6 +145,12 @@ class _HrOverrideAttendanceScreenState extends State<HrOverrideAttendanceScreen>
                         if (hasCheckIn)
                           Text('เข้างาน: ${DateFormat('HH:mm').format(userLog!.checkInTime!)}',
                               style: const TextStyle(color: Colors.green)),
+                        if (userLog?.tempOutTime != null)
+                          Text('ออกชั่วคราว: ${DateFormat('HH:mm').format(userLog!.tempOutTime!)}',
+                              style: const TextStyle(color: Colors.orange)),
+                        if (userLog?.backToWorkTime != null)
+                          Text('กลับมาทำงาน: ${DateFormat('HH:mm').format(userLog!.backToWorkTime!)}',
+                              style: const TextStyle(color: Colors.blue)),
                         if (hasCheckOut)
                           Text('ออกงาน: ${DateFormat('HH:mm').format(userLog!.checkOutTime!)}',
                               style: const TextStyle(color: Colors.red)),

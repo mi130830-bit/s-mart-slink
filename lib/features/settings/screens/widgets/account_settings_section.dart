@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:s_link/features/auth/models/user.dart';
@@ -47,18 +48,12 @@ class AccountSettingsSection extends StatelessWidget {
 
                   if (context.mounted) {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('บันทึกชื่อเรียบร้อย')),
-                    );
+                    SnackbarUtils.showLeft(context, 'บันทึกชื่อเรียบร้อย');
                   }
                 } catch (e) {
                   debugPrint('Error updating name: $e');
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                          content: Text('เกิดข้อผิดพลาด: $e'),
-                          backgroundColor: Colors.red),
-                    );
+                    SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
                   }
                 }
               }

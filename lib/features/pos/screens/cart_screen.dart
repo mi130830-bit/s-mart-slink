@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -66,17 +67,9 @@ class _CartScreenState extends State<CartScreen> {
         _barcodeFocus.requestFocus(); // Keep focus
 
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('เพิ่ม ${exact.name} แล้ว'),
-              duration: const Duration(seconds: 1)),
-        );
+        SnackbarUtils.showLeft(context, 'เพิ่ม ${exact.name} แล้ว');
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text('ไม่พบสินค้า (Product not found)'),
-              backgroundColor: Colors.red),
-        );
+        SnackbarUtils.showLeft(context, 'ไม่พบสินค้า (Product not found)', isError: true);
         _barcodeController.clear();
         _barcodeFocus.requestFocus();
       }

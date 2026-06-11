@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/jobs/map_picker_screen.dart
 
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -46,9 +47,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     if (!serviceEnabled) {
       if (mounted) {
         setState(() => _isLoadingLocation = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('กรุณาเปิด GPS')),
-        );
+        SnackbarUtils.showLeft(context, 'กรุณาเปิด GPS');
       }
       return;
     }
@@ -97,9 +96,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     } catch (e) {
       debugPrint('Error getting location: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ไม่สามารถระบุตำแหน่งปัจจุบันได้')),
-        );
+        SnackbarUtils.showLeft(context, 'ไม่สามารถระบุตำแหน่งปัจจุบันได้');
       }
     } finally {
       if (mounted) setState(() => _isLoadingLocation = false);
@@ -110,9 +107,7 @@ class _MapPickerScreenState extends State<MapPickerScreen> {
     if (_pickedLocation != null) {
       Navigator.pop(context, _pickedLocation);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณาแตะที่แผนที่เพื่อเลือกจุด')),
-      );
+      SnackbarUtils.showLeft(context, 'กรุณาแตะที่แผนที่เพื่อเลือกจุด');
     }
   }
 

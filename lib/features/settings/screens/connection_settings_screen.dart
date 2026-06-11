@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:s_link/core/services/mysql_service.dart';
@@ -53,9 +54,7 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
     );
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('บันทึกการตั้งค่าเรียบร้อย')),
-      );
+      SnackbarUtils.showLeft(context, 'บันทึกการตั้งค่าเรียบร้อย');
       setState(() => _isLoading = false);
     }
   }
@@ -95,14 +94,10 @@ class _ConnectionSettingsScreenState extends State<ConnectionSettingsScreen> {
     if (mounted) {
       if (ip != null) {
         _hostCtrl.text = ip;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('✅ พบเครื่อง POS ที่ IP: $ip')),
-        );
+        SnackbarUtils.showLeft(context, '✅ พบเครื่อง POS ที่ IP: $ip');
         _testConnection(); // Auto test after found
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('❌ ไม่พบเครือง POS ในวง WiFi นี้')),
-        );
+        SnackbarUtils.showLeft(context, '❌ ไม่พบเครือง POS ในวง WiFi นี้');
         setState(() => _isLoading = false);
       }
     }

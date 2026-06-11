@@ -1,5 +1,6 @@
 // ไฟล์: lib/widgets/stock_alert_dialog.dart
 
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:s_link/features/alerts/services/shortage_repository.dart';
@@ -58,23 +59,13 @@ class _StockAlertDialogState extends State<StockAlertDialog> {
       if (!mounted) return;
 
       // แสดงข้อความสำเร็จ
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('✅ แจ้งของหมดเรียบร้อยแล้ว'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      SnackbarUtils.showLeft(context, '✅ แจ้งของหมดเรียบร้อยแล้ว');
 
       Navigator.of(context).pop(true);
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('❌ เกิดข้อผิดพลาด: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      SnackbarUtils.showLeft(context, '❌ เกิดข้อผิดพลาด: $e', isError: true);
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);

@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:s_link/features/alerts/providers/alert_log_provider.dart';
@@ -38,18 +39,11 @@ class _StockAlertScreenState extends State<StockAlertScreen> {
       await Future.wait(futures);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('แจ้งเตือน ${items.length} รายการเรียบร้อย!'),
-            backgroundColor: Colors.teal,
-          ),
-        );
+        SnackbarUtils.showLeft(context, 'แจ้งเตือน ${items.length} รายการเรียบร้อย!');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-        );
+        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
       }
       rethrow;
     }

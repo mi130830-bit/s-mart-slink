@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -80,14 +81,10 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       if (!mounted) return;
 
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ลบงานเรียบร้อย')),
-      );
+      SnackbarUtils.showLeft(context, 'ลบงานเรียบร้อย');
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-        );
+        SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
       }
     }
   }
@@ -105,8 +102,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ไม่สามารถเปิดแผนที่ได้')));
+        SnackbarUtils.showLeft(context, 'ไม่สามารถเปิดแผนที่ได้');
       }
     }
   }
@@ -121,7 +117,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final provider = Provider.of<JobProvider>(ctx, listen: false);
     try {
       if (newImages.isNotEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('กำลังอัปโหลดรูปภาพ...')));
+        if (mounted) SnackbarUtils.showLeft(context, 'กำลังอัปโหลดรูปภาพ...');
         final newUrls = await provider.uploadJobImages(newImages);
         final currentImages = List<String>.from(updates['bill_image_urls'] ?? []);
         updates['bill_image_urls'] = [...currentImages, ...newUrls];
@@ -130,15 +126,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       await provider.updateJob(jobId, updates);
       if (mounted) {
         navigator.pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('อัปเดตข้อมูลเรียบร้อย')),
-        );
+        SnackbarUtils.showLeft(context, 'อัปเดตข้อมูลเรียบร้อย');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-        );
+        SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
       }
     }
   }
@@ -453,11 +445,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('บันทึกข้อมูลและอนุมัติปล่อยรถแล้ว! 🚀'),
-            backgroundColor: Colors.green),
-      );
+      SnackbarUtils.showLeft(context, 'บันทึกข้อมูลและอนุมัติปล่อยรถแล้ว! 🚀');
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)

@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
 import 'package:s_link/features/pos/services/printer_service.dart';
@@ -59,9 +60,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
       debugPrint('Error loading printer settings: $e');
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
       }
     }
   }
@@ -72,9 +71,7 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
     await _printerService.saveAutoPrint(_autoPrint);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('บันทึกการตั้งค่าแล้ว')),
-      );
+      SnackbarUtils.showLeft(context, 'บันทึกการตั้งค่าแล้ว');
     }
   }
 

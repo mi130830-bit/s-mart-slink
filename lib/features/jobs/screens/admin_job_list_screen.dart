@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/jobs/admin_job_list_screen.dart
 
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:developer';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -139,7 +140,7 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
 
     if (displayJobs.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('ไม่มีข้อมูลให้ Export')));
+        SnackbarUtils.showLeft(context, 'ไม่มีข้อมูลให้ Export');
       }
       return;
     }
@@ -155,7 +156,7 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
     } catch (e) {
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('เกิดข้อผิดพลาด: $e')));
+        SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
       }
     }
   }
@@ -174,9 +175,7 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
             onPressed: () {
               final auth = Provider.of<AuthenticationProvider>(context, listen: false);
               jobProvider.startListeningToJobs(auth.currentUser);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('กำลังซิงค์ข้อมูลใหม่...'), duration: Duration(seconds: 1)),
-              );
+              SnackbarUtils.showLeft(context, 'กำลังซิงค์ข้อมูลใหม่...');
             },
           ),
           IconButton(

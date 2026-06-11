@@ -1,4 +1,5 @@
 // ignore_for_file: deprecated_member_use
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
@@ -109,9 +110,7 @@ class _HrAdvanceMoneyScreenState extends State<HrAdvanceMoneyScreen> {
                 ElevatedButton(
                   onPressed: () async {
                     if (selectedUser == null || amountCtrl.text.isEmpty) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('กรุณากรอกข้อมูลให้ครบถ้วน')),
-                      );
+                      SnackbarUtils.showLeft(context, 'กรุณากรอกข้อมูลให้ครบถ้วน');
                       return;
                     }
 
@@ -122,15 +121,11 @@ class _HrAdvanceMoneyScreenState extends State<HrAdvanceMoneyScreen> {
                     if (isInstallment) {
                       installmentAmount = double.tryParse(installmentCtrl.text);
                       if (installmentAmount == null || installmentAmount <= 0) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('กรุณาระบุยอดหักต่องวดให้ถูกต้อง')),
-                        );
+                        SnackbarUtils.showLeft(context, 'กรุณาระบุยอดหักต่องวดให้ถูกต้อง');
                         return;
                       }
                       if (installmentAmount > amount) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('ยอดหักต่องวดต้องไม่เกินยอดเบิกทั้งหมด')),
-                        );
+                        SnackbarUtils.showLeft(context, 'ยอดหักต่องวดต้องไม่เกินยอดเบิกทั้งหมด');
                         return;
                       }
                     }

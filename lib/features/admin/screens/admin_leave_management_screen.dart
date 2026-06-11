@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:developer';
@@ -60,8 +61,7 @@ class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
 
   Future<void> _submitLeave(bool isLeaving) async {
     if (_selectedUserId == null || _selectedUserData == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('กรุณาเลือกพนักงานก่อน')));
+      SnackbarUtils.showLeft(context, 'กรุณาเลือกพนักงานก่อน');
       return;
     }
     try {
@@ -87,13 +87,7 @@ class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text('${isLeaving ? "เริ่ม" : "ยกเลิก"}การลาให้ $userName แล้ว'),
-          backgroundColor: isLeaving ? Colors.orange : Colors.green,
-        ),
-      );
+      SnackbarUtils.showLeft(context, '${isLeaving ? "เริ่ม" : "ยกเลิก"}การลาให้ $userName แล้ว');
 
       setState(() {
         _selectedUserId = null;
@@ -102,9 +96,7 @@ class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
     } catch (e) {
       log('Error toggling leave: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('เกิดข้อผิดพลาด: $e')),
-      );
+      SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
     }
   }
 
@@ -283,8 +275,7 @@ class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
     if (confirm != true) return;
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กำลังลบข้อมูล... กรุณารอสักครู่')));
+    SnackbarUtils.showLeft(context, 'กำลังลบข้อมูล... กรุณารอสักครู่');
 
     try {
       final collection = FirebaseFirestore.instance.collection('holiday_logs');
@@ -300,17 +291,11 @@ class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
       await batch.commit();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('ลบข้อมูลเรียบร้อย'),
-          backgroundColor: Colors.green,
-        ));
+        SnackbarUtils.showLeft(context, 'ลบข้อมูลเรียบร้อย');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('เกิดข้อผิดพลาด: $e'),
-          backgroundColor: Colors.red,
-        ));
+        SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
       }
     }
   }

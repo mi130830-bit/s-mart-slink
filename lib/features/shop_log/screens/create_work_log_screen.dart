@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/shop_log/create_work_log_screen.dart
 
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:s_link/features/jobs/models/shop_work_log.dart';
@@ -73,9 +74,7 @@ class _CreateWorkLogScreenState extends State<CreateWorkLogScreen> {
     }
 
     if (itemsToSend.isEmpty && _noteController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('กรุณาระบุจำนวนงานอย่างน้อย 1 รายการ')),
-      );
+      SnackbarUtils.showLeft(context, 'กรุณาระบุจำนวนงานอย่างน้อย 1 รายการ');
       return;
     }
 
@@ -101,9 +100,7 @@ class _CreateWorkLogScreenState extends State<CreateWorkLogScreen> {
       await alertProvider.createWorkLog(currentUser.uid, itemsToSend);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('บันทึกงานเรียบร้อย! ✅')),
-        );
+        SnackbarUtils.showLeft(context, 'บันทึกงานเรียบร้อย! ✅');
         // **แก้ไข: ไม่ต้อง pop แต่ให้เคลียร์ค่าแทน**
         setState(() {
           for (var controller in _qtyControllers.values) {

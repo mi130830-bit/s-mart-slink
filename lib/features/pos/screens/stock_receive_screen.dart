@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:s_link/features/pos/models/pos_product.dart';
 import 'package:s_link/features/pos/repositories/pos_repository.dart';
@@ -55,19 +56,12 @@ class _StockReceiveScreenState extends State<StockReceiveScreen> {
         _addProduct(product);
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('ไม่พบสินค้า: $code'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 1),
-          ));
+          SnackbarUtils.showLeft(context, 'ไม่พบสินค้า: $code', isError: true);
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ));
+        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
       }
     } finally {
       setState(() => _isLoading = false);
@@ -140,27 +134,18 @@ class _StockReceiveScreenState extends State<StockReceiveScreen> {
 
       if (mounted) {
         if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('✅ รับของเข้าเรียบร้อย (สต็อกเพิ่มขึ้น)'),
-            backgroundColor: Colors.green,
-          ));
+          SnackbarUtils.showLeft(context, '✅ รับของเข้าเรียบร้อย (สต็อกเพิ่มขึ้น)');
           setState(() {
             _receivingItems.clear();
             _scannedProducts.clear();
           });
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('❌ บันทึกไม่สำเร็จ'),
-            backgroundColor: Colors.red,
-          ));
+          SnackbarUtils.showLeft(context, '❌ บันทึกไม่สำเร็จ', isError: true);
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error saving: $e'),
-          backgroundColor: Colors.red,
-        ));
+        SnackbarUtils.showLeft(context, 'Error saving: $e', isError: true);
       }
     } finally {
       setState(() => _isLoading = false);

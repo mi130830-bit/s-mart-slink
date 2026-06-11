@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/auth/register_screen.dart
 
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:s_link/features/auth/services/auth_service.dart';
 import 'package:s_link/features/auth/models/user_role.dart';
@@ -49,17 +50,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (user != null && mounted) {
         // กลับไปหน้า Login ทันที และแสดงข้อความให้ทราบ
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('สมัครสำเร็จ! บัญชีรอการอนุมัติ กรุณาแจ้ง Admin'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 5),
-          ),
-        );
+        SnackbarUtils.showLeft(context, 'สมัครสำเร็จ! บัญชีรอการอนุมัติ กรุณาแจ้ง Admin');
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('ไม่สามารถสมัครได้ อีเมลอาจซ้ำ')),
-        );
+        SnackbarUtils.showLeft(context, 'ไม่สามารถสมัครได้ อีเมลอาจซ้ำ');
       }
     } catch (e) {
       if (mounted) {

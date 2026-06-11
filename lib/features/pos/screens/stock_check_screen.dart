@@ -1,3 +1,4 @@
+import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:s_link/features/alerts/services/alert_log_service.dart';
 import 'package:s_link/features/pos/models/pos_product.dart';
@@ -57,19 +58,12 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
         _addProductToMap(product);
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('ไม่พบสินค้า: $code'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 1),
-          ));
+          SnackbarUtils.showLeft(context, 'ไม่พบสินค้า: $code', isError: true);
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ));
+        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
       }
     } finally {
       if (mounted) {
@@ -181,10 +175,7 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
       final failCount = success ? 0 : stockUpdates.length;
 
       if (failCount == 0) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('✅ บันทึกสต๊อกเรียบร้อย ($successCount รายการ)'),
-          backgroundColor: Colors.green,
-        ));
+        SnackbarUtils.showLeft(context, '✅ บันทึกสต๊อกเรียบร้อย ($successCount รายการ)');
         setState(() {
           _countedStock.clear();
           _scannedProducts.clear();
@@ -283,9 +274,7 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
 
       if (logs.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('ไม่พบรายงานในช่วงเวลาที่เลือก')),
-          );
+          SnackbarUtils.showLeft(context, 'ไม่พบรายงานในช่วงเวลาที่เลือก');
         }
         return;
       }
@@ -366,11 +355,7 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error importing: $e'),
-              backgroundColor: Colors.red),
-        );
+        SnackbarUtils.showLeft(context, 'Error importing: $e', isError: true);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
