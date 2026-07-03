@@ -11,7 +11,7 @@ import 'package:s_link/features/jobs/providers/job_provider.dart';
 import 'package:s_link/features/jobs/screens/job_detail_screen.dart';
 import 'package:s_link/features/jobs/models/job.dart';
 import 'package:s_link/features/alerts/screens/stock_alert_screen.dart';
-import 'package:s_link/features/hr/screens/attendance_screen.dart' as s_link_attendance;
+// Removed attendance_screen.dart
 
 class RequesterView extends StatefulWidget {
   const RequesterView({super.key});
@@ -53,16 +53,6 @@ class _RequesterViewState extends State<RequesterView>
       appBar: AppBar(
         title: const Text('ส.บริการ (พนักงานหน้าร้าน)'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.fingerprint),
-            tooltip: 'ลงเวลาเข้างาน',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const s_link_attendance.AttendanceScreen()),
-              );
-            },
-          ),
           IconButton(
             onPressed: () => authProvider.logout(),
             icon: const Icon(Icons.logout, color: Colors.red),

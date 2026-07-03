@@ -10,7 +10,9 @@ import '../../auth/providers/auth_provider.dart';
 import 'dart:developer';
 
 class AttendanceScreen extends StatefulWidget {
-  const AttendanceScreen({super.key});
+  final bool showLogoutButton;
+  
+  const AttendanceScreen({super.key, this.showLogoutButton = false});
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -230,7 +232,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('ลงเวลาเข้างาน')),
+      appBar: AppBar(
+        title: const Text('ลงเวลาเข้างาน'),
+        actions: widget.showLogoutButton 
+          ? [
+              IconButton(
+                icon: const Icon(Icons.logout),
+                onPressed: () => context.read<AuthenticationProvider>().logout(),
+              )
+            ]
+          : null,
+      ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator())
         : Center(

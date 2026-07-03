@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'register_screen.dart'; // **เพิ่ม Import**
 
-import 'package:s_link/features/settings/screens/connection_settings_screen.dart'; // **เพิ่ม Import**
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -62,22 +61,6 @@ class _LoginScreenState extends State<LoginScreen> {
     final bool isLoading = authProvider.isLoading;
 
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings, color: Colors.grey),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const ConnectionSettingsScreen()),
-              );
-            },
-          ),
-        ],
-      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),

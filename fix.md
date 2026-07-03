@@ -1,0 +1,83 @@
+# S-Link Fix History
+
+---
+
+## [2026-07-02] Driver QR — ย้ายจาก Settings → Dashboard Card
+
+### 📋 สรุป
+ปรับ UX ให้ Driver เข้า QR ได้โดยตรงจาก Dashboard (ง่ายกว่าเข้าผ่าน Settings)
+**ผลลัพธ์:** `flutter analyze` ผ่าน ✅ — No issues found!
+
+### 🔀 เปลี่ยนแปลง
+| ไฟล์ | รายละเอียด |
+|---|---|
+| `employee_dashboard.dart` | เพิ่มการ์ด **QR รับเงิน** ใน GridView (Driver เท่านั้น, card ที่ 3) |
+| `settings_screen.dart` | ลบ Driver QR tile ออกจาก Settings Section |
+| `driver_qr_screen.dart` | รองรับทั้ง Static QR (รูปจาก POS) และ Dynamic QR ผ่าน API, fullscreen mode |
+| `pos_api_service.dart` | เปลี่ยน `getPromptPayId()` → `getPaymentConfig()` คืนค่า config ครบ (mode + base64) |
+
+---
+
+## [2026-07-02] Settings Cleanup + Driver QR Screen (Backend)
+
+
+### 📋 สรุปการเปลี่ยนแปลง (Summary)
+ตรวจสอบและทำความสะอาด Settings Screen ทั้งหมด + เพิ่มฟีเจอร์ Driver QR PromptPay
+**ผลลัพธ์:** `flutter analyze` ผ่าน ✅ — No issues found!
+
+### ❌ ลบออก (Deleted)
+| ไฟล์ | เหตุผล |
+|---|---|
+| `lib/features/sql/sql_connect_screen.dart` + โฟลเดอร์ | Dead Code — ไม่มีใคร navigate มาเลย Architecture เก่า (Direct MySQL ยกเลิกแล้ว) |
+| `lib/features/settings/screens/connection_settings_screen.dart` | MySQL LAN Config Screen — ไม่ใช้แล้วหลังเปลี่ยนไป Single API Tunnel |
+
+### 🔧 แก้ไข (Fixed / Improved)
+| ไฟล์ | รายละเอียด |
+|---|---|
+| `login_screen.dart` | ลบ import + ปุ่ม Settings ที่ navigate ไปหน้า MySQL LAN ที่ถูกลบออกไปแล้ว |
+| `account_settings_section.dart` | 1) เปลี่ยน imports ออกจาก cloud_firestore โดยตรง → ใช้ UserService.updateUser() 2) เพิ่ม _roleLabel() รองรับทุก Role ครบ (admin/driver/requester/hr/gasStation/pending/unknown) 3) เพิ่ม auth.refreshCurrentUser() หลัง save ให้ UI อัปเดตทันที |
+| `connection_settings_section.dart` | เปลี่ยนจาก StatelessWidget+FutureBuilder เป็น StatefulWidget ที่ถูกต้อง ลบ anti-pattern markNeedsBuild() ซ่อน PromptPay/DeviceID fields จาก Driver role |
+| `pos_config_section.dart` | เพิ่ม Printer Settings tile (ก่อนหน้านี้หน้า PrinterSettingsScreen ไม่มีทางเข้า) |
+| `auth_provider.dart` | เพิ่ม refreshCurrentUser() — ดึงข้อมูล User ใหม่จาก Firestore หลังแก้ไข profile |
+
+### ✨ เพิ่มใหม่ (New Features)
+| ไฟล์ | รายละเอียด |
+|---|---|
+| `lib/features/settings/screens/driver_qr_screen.dart` | **Driver QR Screen** — หน้าแสดง QR PromptPay แบบ Fullscreen สำหรับเก็บเงินปลายทาง (COD) ดึง ID จาก Server API ก่อน (fallback SharedPreferences), WakeLock, สลับ Static/Dynamic QR พร้อมล็อคยอด COD |
+| `pos_api_service.dart` | เพิ่ม getPromptPayId() — GET /api/v1/config/promptpay เพื่อดึง PromptPay ID จาก Server เป็น Single Source of Truth |
+| `settings_screen.dart` | เพิ่ม Driver Tools Section (เห็นเฉพาะ Driver) — tile นำไปหน้า Driver QR Screen |
+
+---
+
+## [2026-07-02] Codebase Cleanup — ลบโค้ดซ้ำซ้อน & รวม Logic
+
+
+### 📋 สรุปการเปลี่ยนแปลง (Summary)
+กวาดบ้านครั้งใหญ่ ลบโค้ดที่ไม่ได้ใช้และรวม logic ที่ซ้ำซ้อนให้เป็นที่เดียวกัน
+**ผลลัพธ์:** `flutter analyze` ผ่าน ✅ — No issues found!
+
+### ❌ ลบออก (Deleted)
+| ไฟล์/Method | เหตุผล |
+|---|---|
+| `core/services/customer_service.dart` | ไม่มีไฟล์ใดเรียกใช้เลย — ซ้ำกับ `MasterDataProvider` |
+| `MasterDataService.getDeliverers()` (Stream) | ถูกแทนที่ด้วย `getDeliverersOnce()` (Future) ตั้งแต่รอบ Cost Optimization |
+| `MasterDataService.getAllDeliverersForReport()` | เหมือนกัน 100% กับ `getDeliverersOnce()` — รวมเป็นตัวเดียว |
+| `MasterDataService.getCars()` (Stream) | ถูกแทนที่ด้วย `getCarsOnce()` (Future) |
+| `MasterDataService.toggleDelivererStatus()` | ไม่มีใครเรียกใช้ |
+| `MasterDataService.toggleCarAvailability()` | ไม่มีใครเรียกใช้ |
+| `MasterDataProvider.addDeliverer/updateDeliverer/deleteDeliverer()` | ไม่มี UI เรียกตรง — การจัดการพนักงานย้ายไป `UserService` + `DriverListScreen` แล้ว |
+| `MasterDataProvider.refreshMasterData()` | แค่ wrapper ซ้อน `loadMasterData()` โดยไม่มีใครเรียก |
+| `NotificationService.subscribeToTopic()` | FCM topics ทั้งหมดจัดการใน `UserService` อยู่แล้ว |
+| `NotificationService.unsubscribeFromTopic()` | FCM topics ทั้งหมดจัดการใน `UserService` อยู่แล้ว |
+
+### 🔀 รวม/ปรับปรุง (Merged/Improved)
+| การเปลี่ยนแปลง | รายละเอียด |
+|---|---|
+| `AuthProvider.logout()` | รวม FCM unsubscribe จาก hardcode 2 topics ให้เรียก `UserService.unsubscribeAllTopics()` — ป้องกัน miss topics ในอนาคต |
+| `export_provider.dart` | แก้ให้เรียก `getDeliverersOnce()` แทน `getAllDeliverersForReport()` |
+| `MasterDataProvider.startListeningToMasterData()` | ปรับ comment ให้ถูกต้อง (เป็น Future ไม่ใช่ Stream) |
+
+### ✅ ยืนยัน (Verified)
+- `flutter analyze` → **No issues found!**
+- `deliverers` collection ยังถูกใช้โดย `job_detail_screen.dart` และ `work_log_history_screen.dart` สำหรับ lookup ชื่อทีมงาน — **ยังเก็บไว้ถูกต้อง**
+- `customer.dart` (embedded value object ใน Job) — **ยังเก็บไว้ถูกต้อง** ต่างจาก `customer_master.dart` (standalone Firestore doc)

@@ -207,7 +207,7 @@ class ExportProvider with ChangeNotifier {
     log('ExportProvider: Fetching Job Count Report...');
 
     final completedJobs = await _jobService.getCompletedJobsByDateRange(start, end);
-    final deliverers = await _masterDataService.getAllDeliverersForReport();
+    final deliverers = await _masterDataService.getDeliverersOnce();
 
     final Map<String, String> delivererNames = {
       for (var d in deliverers) d.id: d.name

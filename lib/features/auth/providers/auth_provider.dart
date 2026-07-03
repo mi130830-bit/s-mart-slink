@@ -136,10 +136,8 @@ class AuthenticationProvider with ChangeNotifier {
       // ✅ ลบ FCM Token ก่อน Logout
       if (_firebaseUser != null) {
         await NotificationService.removeFCMToken(_firebaseUser!.uid);
-
-        // Unsubscribe from all potential topics to be safe
-        await NotificationService.unsubscribeFromTopic('driver_alerts');
-        await NotificationService.unsubscribeFromTopic('admin_alerts');
+        // Unsubscribe จาก topics ทั้งหมดผ่าน UserService (single source of truth)
+        _userService.unsubscribeAllTopics();
       }
 
       await _authService.signOut();
@@ -147,6 +145,17 @@ class AuthenticationProvider with ChangeNotifier {
       log('Logout Error: $e');
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  // ✅ ดึงข้อมูล User ใหม่จาก Firestore (ใช้หลัง update ชื่อ/role)
+  Future<void> refreshCurrentUser() async {
+    if (_firebaseUser == null) return;
+    try {
+      _currentUser = await _userService.getUserById(_firebaseUser!.uid);
+      notifyListeners();
+    } catch (e) {
+      log('Error refreshing user: $e');
     }
   }
 

@@ -1,7 +1,10 @@
 import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import 'package:s_link/features/auth/models/user.dart';
+import 'package:s_link/features/auth/models/user_role.dart';
+import 'package:s_link/features/auth/services/user_service.dart';
+import 'package:s_link/features/auth/providers/auth_provider.dart';
 
 class AccountSettingsSection extends StatelessWidget {
   final UserModel? user;
@@ -15,12 +18,25 @@ class AccountSettingsSection extends StatelessWidget {
     required this.isDriver,
   });
 
+  String _roleLabel({required bool isAdmin, required bool isDriver}) {
+    if (user == null) return 'ไม่ทราบ (Unknown)';
+    return switch (user!.role) {
+      UserRole.admin     => 'ผู้ดูแลระบบ (Admin)',
+      UserRole.driver    => 'คนขับรถ (Driver)',
+      UserRole.requester => 'ผู้สั่งงาน (Requester)',
+      UserRole.hr        => 'HR / ฝ่ายบุคคล',
+      UserRole.gasStation => 'เด็กปั๊ม (Gas Station)',
+      UserRole.pending   => 'รออนุมัติ (Pending)',
+      UserRole.unknown   => 'ไม่ทราบ (Unknown)',
+    };
+  }
   void _showEditNameDialog(BuildContext context, String currentName, String uid) {
     final nameController = TextEditingController(text: currentName);
+    final userService = UserService();
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         title: const Text('แก้ไขชื่อแสดงผล'),
         content: TextField(
           controller: nameController,
@@ -28,28 +44,27 @@ class AccountSettingsSection extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(ctx),
             child: const Text('ยกเลิก'),
           ),
           ElevatedButton(
             onPressed: () async {
-              if (nameController.text.trim().isNotEmpty) {
+              final newName = nameController.text.trim();
+              if (newName.isNotEmpty) {
                 try {
-                  final newName = nameController.text.trim();
-                  final batch = FirebaseFirestore.instance.batch();
-
-                  final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
-                  batch.update(userRef, {'name': newName});
-
-                  final delivererRef = FirebaseFirestore.instance.collection('deliverers').doc(uid);
-                  batch.set(delivererRef, {'name': newName}, SetOptions(merge: true));
-
-                  await batch.commit();
-
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    SnackbarUtils.showLeft(context, 'บันทึกชื่อเรียบร้อย');
-                  }
+                  // ✅ ใช้ UserService เพื่ออัปเดตชื่อ (Sync users + deliverers พร้อมกัน)
+                  await userService.updateUser(
+                    uid,
+                    newName,
+                    user?.role.name ?? 'pending',
+                  );
+                  if (!context.mounted) return;
+                  // โป้ให้ AuthProvider refresh profile เพื่อ UI อัปเดตทันที
+                  final auth = Provider.of<AuthenticationProvider>(context, listen: false);
+                  await auth.refreshCurrentUser();
+                  if (!context.mounted) return;
+                  Navigator.pop(ctx);
+                  SnackbarUtils.showLeft(context, 'บันทึกชื่อเรียบร้อย');
                 } catch (e) {
                   debugPrint('Error updating name: $e');
                   if (context.mounted) {
@@ -163,9 +178,7 @@ class AccountSettingsSection extends StatelessWidget {
                         size: 16, color: Colors.white),
                     const SizedBox(width: 6),
                     Text(
-                      isAdmin
-                          ? 'ผู้ดูแลระบบ (Admin)'
-                          : (isDriver ? 'คนขับรถ (Driver)' : 'พนักงาน (Staff)'),
+                      _roleLabel(isAdmin: isAdmin, isDriver: isDriver),
                       style: const TextStyle(color: Colors.white, fontSize: 12),
                     ),
                   ],

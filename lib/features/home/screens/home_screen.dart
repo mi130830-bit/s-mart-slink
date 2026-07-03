@@ -7,8 +7,8 @@ import 'package:s_link/features/auth/screens/login_screen.dart';
 
 // Import Dashboard ต่างๆ
 import 'package:s_link/features/dashboard/screens/admin_dashboard.dart';
-import 'package:s_link/features/dashboard/screens/requester_view.dart';
-import 'package:s_link/features/dashboard/screens/driver_view.dart';
+import 'package:s_link/features/dashboard/screens/employee_dashboard.dart';
+// Removed requester_view and driver_view
 import 'package:s_link/features/hr/screens/hr_dashboard.dart';
 import 'package:s_link/features/hr/screens/gas_station_view.dart';
 
@@ -57,10 +57,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return const GasStationView();
     } else if (roleName == 'requester') {
       return const PosNavigationWrapper(
-        child: RequesterView(),
+        child: EmployeeDashboard(isRequester: true),
       );
     } else if (roleName == 'driver') {
-      return const DriverView();
+      return const EmployeeDashboard(isRequester: false);
     } else if (roleName == 'pending') {
       return const Scaffold(
         body: Center(

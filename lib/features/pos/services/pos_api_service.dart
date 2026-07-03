@@ -177,4 +177,24 @@ class PosApiService {
     if (response == null) return {'success': true};
     return response as Map<String, dynamic>;
   }
+
+  // ✅ 12. ดึง Payment Config จาก POS Desktop — Single Source of Truth
+  // Driver QR Screen เรียกใช้เพื่อให้ QR ตรงกับที่ Admin ตั้งไว้ใน POS
+  // GET /api/v1/config/promptpay → { promptpay_id, qr_mode, static_qr_base64? }
+  Future<Map<String, dynamic>?> getPaymentConfig() async {
+    try {
+      final result = await _sendRequest(
+        method: 'GET',
+        path: '/api/v1/config/promptpay',
+        timeout: const Duration(seconds: 5),
+      );
+      if (result is Map<String, dynamic> && result['success'] == true) {
+        debugPrint('✅ [PaymentConfig] Fetched from POS Server');
+        return result;
+      }
+    } catch (e) {
+      debugPrint('⚠️ [PaymentConfig] Cannot fetch from server, will use local: $e');
+    }
+    return null;
+  }
 }

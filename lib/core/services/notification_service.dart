@@ -190,23 +190,4 @@ class NotificationService {
     }
   }
 
-  // 5. Subscribe to Topic
-  static Future<void> subscribeToTopic(String topic) async {
-    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return;
-    try {
-      await FirebaseMessaging.instance.subscribeToTopic(topic);
-    } catch (e) {
-      log('Error subscribing to topic $topic: $e');
-    }
-  }
-
-  // 6. Unsubscribe from Topic
-  static Future<void> unsubscribeFromTopic(String topic) async {
-    if (kIsWeb || (!Platform.isAndroid && !Platform.isIOS)) return;
-    try {
-      await FirebaseMessaging.instance.unsubscribeFromTopic(topic);
-    } catch (e) {
-      log('Error unsubscribing from topic $topic: $e');
-    }
-  }
 }

@@ -14,30 +14,8 @@ class MasterDataService {
 
   final String _delivererCollection = 'deliverers';
 
-  // 1. ดึงรายการ Deliverer ทั้งหมด (Stream)
-  Stream<List<DelivererModel>> getDeliverers() {
-    return _firestore
-        .collection(_delivererCollection)
-        .orderBy('name', descending: false)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => DelivererModel.fromFirestore(doc))
-            .toList());
-  }
-
-  // ✅ [Cost Optimization] ใช้แบบ Future โหลดครั้งเดียว
+  // ดึงรายการ Deliverer ทั้งหมด (Future — cost optimized)
   Future<List<DelivererModel>> getDeliverersOnce() async {
-    final snapshot = await _firestore
-        .collection(_delivererCollection)
-        .orderBy('name', descending: false)
-        .get();
-    return snapshot.docs
-        .map((doc) => DelivererModel.fromFirestore(doc))
-        .toList();
-  }
-
-  // ✅ [NEW] ดึงรายการ Deliverer ทั้งหมดสำหรับ Report (Future)
-  Future<List<DelivererModel>> getAllDeliverersForReport() async {
     final snapshot = await _firestore
         .collection(_delivererCollection)
         .orderBy('name', descending: false)
@@ -72,23 +50,7 @@ class MasterDataService {
     });
   }
 
-  // 4. อัปเดตสถานะ
-  Future<void> toggleDelivererStatus(DelivererModel deliverer) async {
-    try {
-      await _firestore
-          .collection(_delivererCollection)
-          .doc(deliverer.id)
-          .update({
-        'isActive': !deliverer.isActive,
-      });
-      log('Deliverer status toggled for: ${deliverer.name}');
-    } catch (e) {
-      log('Error toggling deliverer status: $e');
-      throw Exception('Failed to update deliverer status');
-    }
-  }
-
-  // 5. ลบ Deliverer
+  // 4. ลบ Deliverer
   Future<void> deleteDeliverer(String delivererId) async {
     try {
       await _firestore
@@ -108,17 +70,7 @@ class MasterDataService {
 
   final String _carCollection = 'cars';
 
-  // 1. ดึงรายการ Car ทั้งหมด
-  Stream<List<CarModel>> getCars() {
-    return _firestore
-        .collection(_carCollection)
-        .orderBy('name', descending: false)
-        .snapshots()
-        .map((snapshot) =>
-            snapshot.docs.map((doc) => CarModel.fromFirestore(doc)).toList());
-  }
-
-  // ✅ [Cost Optimization] ใช้แบบ Future โหลดครั้งเดียว
+  // ดึงรายการ Car ทั้งหมด (Future — cost optimized)
   Future<List<CarModel>> getCarsOnce() async {
     final snapshot = await _firestore
         .collection(_carCollection)
@@ -152,20 +104,7 @@ class MasterDataService {
     });
   }
 
-  // 4. อัปเดตสถานะ Car
-  Future<void> toggleCarAvailability(CarModel car) async {
-    try {
-      await _firestore.collection(_carCollection).doc(car.id).update({
-        'isAvailable': !car.isAvailable,
-      });
-      log('Car status toggled for: ${car.name}');
-    } catch (e) {
-      log('Error toggling car availability: $e');
-      throw Exception('Failed to update car availability');
-    }
-  }
-
-  // 5. ลบ Car
+  // 4. ลบ Car
   Future<void> deleteCar(String carId) async {
     try {
       await _firestore.collection(_carCollection).doc(carId).delete();

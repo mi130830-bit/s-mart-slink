@@ -11,7 +11,7 @@ import 'package:s_link/features/jobs/screens/job_detail_screen.dart';
 import 'package:s_link/features/shop_log/screens/create_work_log_screen.dart';
 
 import 'package:s_link/features/dashboard/screens/pickup_screen.dart'; // ✅ Import PickupScreen
-import 'package:s_link/features/hr/screens/attendance_screen.dart' as s_link_attendance;
+// Removed attendance_screen.dart
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:s_link/core/config/app_constants.dart';
@@ -51,16 +51,6 @@ class _DriverViewState extends State<DriverView> {
           title: const Text('พนักงานหลังบ้าน'),
           centerTitle: false,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.fingerprint),
-              tooltip: 'ลงเวลาเข้างาน',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const s_link_attendance.AttendanceScreen()),
-                );
-              },
-            ),
             IconButton(
               icon: const Icon(Icons.settings),
               tooltip: 'ตั้งค่า',

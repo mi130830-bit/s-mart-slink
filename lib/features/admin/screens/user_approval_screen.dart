@@ -9,13 +9,29 @@ import 'package:s_link/features/auth/models/user.dart';
 class UserApprovalScreen extends StatelessWidget {
   const UserApprovalScreen({super.key});
 
-  // ฟังก์ชันอัปเดต Role (อนุมัติ)
+  // ฟังก์ชันอัปเดต Role (อนุมัติ) พร้อมผูกสิทธิ์เข้ากลุ่มส่งของของระบบ
   Future<void> _updateUserRole(
-      BuildContext context, String uid, String newRole) async {
+      BuildContext context, String uid, String newRole, String userName) async {
     try {
-      await FirebaseFirestore.instance.collection('users').doc(uid).update({
+      final batch = FirebaseFirestore.instance.batch();
+      final userRef = FirebaseFirestore.instance.collection('users').doc(uid);
+      batch.update(userRef, {
         'role': newRole,
       });
+
+      // ซิงค์เข้าตาราง deliverers เพื่อดึงข้อมูลไปใช้จัดส่ง/นับสถิติ (เฉพาะพนักงานส่งของ/หน้าร้าน)
+      final delivererRef = FirebaseFirestore.instance.collection('deliverers').doc(uid);
+      if (newRole == 'driver' || newRole == 'requester') {
+        batch.set(delivererRef, {
+          'name': userName,
+          'isActive': true,
+        }, SetOptions(merge: true));
+      } else {
+        batch.delete(delivererRef);
+      }
+
+      await batch.commit();
+      
       if (context.mounted) {
         SnackbarUtils.showLeft(context, 'อนุมัติเรียบร้อย!');
       }
@@ -110,7 +126,7 @@ class UserApprovalScreen extends StatelessWidget {
                               Expanded(
                                 child: ElevatedButton.icon(
                                   onPressed: () =>
-                                      _updateUserRole(context, user.uid, 'driver'),
+                                      _updateUserRole(context, user.uid, 'driver', user.name),
                                   icon: const Icon(Icons.local_shipping),
                                   label: const Text('Driver'),
                                   style: ElevatedButton.styleFrom(
@@ -123,7 +139,7 @@ class UserApprovalScreen extends StatelessWidget {
                               Expanded(
                                 child: ElevatedButton.icon(
                                   onPressed: () => _updateUserRole(
-                                      context, user.uid, 'requester'),
+                                      context, user.uid, 'requester', user.name),
                                   icon: const Icon(Icons.assignment_ind),
                                   label: const Text('Requester'),
                                   style: ElevatedButton.styleFrom(
@@ -140,7 +156,7 @@ class UserApprovalScreen extends StatelessWidget {
                               Expanded(
                                 child: ElevatedButton.icon(
                                   onPressed: () =>
-                                      _updateUserRole(context, user.uid, 'hr'),
+                                      _updateUserRole(context, user.uid, 'hr', user.name),
                                   icon: const Icon(Icons.group),
                                   label: const Text('HR'),
                                   style: ElevatedButton.styleFrom(
@@ -153,7 +169,7 @@ class UserApprovalScreen extends StatelessWidget {
                               Expanded(
                                 child: ElevatedButton.icon(
                                   onPressed: () => _updateUserRole(
-                                      context, user.uid, 'gas_station'),
+                                      context, user.uid, 'gas_station', user.name),
                                   icon: const Icon(Icons.local_gas_station),
                                   label: const Text('Gas Station'),
                                   style: ElevatedButton.styleFrom(
@@ -170,7 +186,7 @@ class UserApprovalScreen extends StatelessWidget {
                               Expanded(
                                 child: ElevatedButton.icon(
                                   onPressed: () => _updateUserRole(
-                                      context, user.uid, 'admin'),
+                                      context, user.uid, 'admin', user.name),
                                   icon: const Icon(Icons.admin_panel_settings),
                                   label: const Text('Admin (ผู้ดูแลระบบ)'),
                                   style: ElevatedButton.styleFrom(

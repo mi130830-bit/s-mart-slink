@@ -97,6 +97,8 @@ class UserService {
 
   void _handlePostRegisterSubscription(UserRole role) {
     try {
+      if (role == UserRole.gasStation) return;
+      
       if (role == UserRole.admin) {
         _fcm.subscribeToTopic('admin_alerts');
       } else if (role == UserRole.driver) {
@@ -135,8 +137,13 @@ class UserService {
       _fcm.unsubscribeFromTopic('driver_alerts');
       _fcm.unsubscribeFromTopic('requester_alerts'); // ✅ เพิ่มการ Reset
 
-      // 2. สมัครใหม่ตาม Role ปัจจุบัน
       final role = roleString.toLowerCase();
+      
+      // หากเป็นเด็กปั้ม ไม่ต้องรับแจ้งเตือนใดๆ ทั้งสิ้น (รวมถึง direct push)
+      if (role == 'gas_station' || role == 'gasstation') {
+        return; 
+      }
+      
       if (role == 'admin') {
         _fcm.subscribeToTopic('admin_alerts');
       } else if (role == 'driver') {
@@ -174,5 +181,41 @@ class UserService {
     } catch (e) {
       log('FCM unsubscribe failed: $e');
     }
+  }
+
+  // ✅ อัปเดตข้อมูลพนักงาน (ชื่อและตำแหน่ง) พร้อมซิงค์เข้าตาราง deliverers เพื่อไม่ให้ส่งผลเสียต่อระบบประวัติจัดส่งและรายงาน
+  Future<void> updateUser(String uid, String newName, String newRole) async {
+    final batch = _firestore.batch();
+    
+    final userRef = _firestore.collection('users').doc(uid);
+    batch.update(userRef, {
+      'name': newName,
+      'role': newRole,
+    });
+
+    final delivererRef = _firestore.collection('deliverers').doc(uid);
+    if (newRole == 'driver' || newRole == 'requester') {
+      batch.set(delivererRef, {
+        'name': newName,
+        'isActive': true,
+      }, SetOptions(merge: true));
+    } else {
+      batch.delete(delivererRef);
+    }
+
+    await batch.commit();
+  }
+
+  // ✅ ลบข้อมูลพนักงานออกจากระบบ (กรณีเลิกจ้าง) พร้อมลบออกจากกลุ่มประวัติจัดส่งด้วย
+  Future<void> deleteUser(String uid) async {
+    final batch = _firestore.batch();
+    
+    final userRef = _firestore.collection('users').doc(uid);
+    batch.delete(userRef);
+
+    final delivererRef = _firestore.collection('deliverers').doc(uid);
+    batch.delete(delivererRef);
+
+    await batch.commit();
   }
 }

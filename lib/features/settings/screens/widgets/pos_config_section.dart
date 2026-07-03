@@ -3,6 +3,7 @@ import 'package:s_link/features/admin/screens/user_approval_screen.dart';
 import 'package:s_link/features/master_data/screens/car_list_screen.dart';
 import 'package:s_link/features/master_data/screens/driver_list_screen.dart';
 import 'package:s_link/features/settings/screens/pos_config_screen.dart';
+import 'package:s_link/features/settings/screens/printer_settings_screen.dart';
 import 'package:s_link/features/settings/screens/widgets/settings_shared_ui.dart';
 
 class PosConfigSection extends StatelessWidget {
@@ -19,6 +20,7 @@ class PosConfigSection extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        // --- Admin: System Management ---
         if (isAdmin) ...[
           SettingsSharedUI.buildSectionHeader('การจัดการระบบ (System Management)'),
           Card(
@@ -50,10 +52,10 @@ class PosConfigSection extends StatelessWidget {
                 ),
                 SettingsSharedUI.buildDivider(),
                 SettingsSharedUI.buildModernTile(
-                  icon: Icons.person_pin_circle,
+                  icon: Icons.manage_accounts,
                   color: Colors.blue,
-                  title: 'Manage Drivers',
-                  subtitle: 'จัดการข้อมูลคนขับรถ',
+                  title: 'Manage Employees',
+                  subtitle: 'จัดการข้อมูลพนักงาน (ปรับตำแหน่ง/ลบออก)',
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const DriverListScreen()),
@@ -65,25 +67,41 @@ class PosConfigSection extends StatelessWidget {
           const SizedBox(height: 24),
         ],
 
+        // --- Non-Driver: POS Config ---
         if (!isDriver) ...[
           SettingsSharedUI.buildSectionHeader('ตั้งค่าระบบ POS (POS Config)'),
           Card(
             elevation: 2,
             shadowColor: Colors.black.withValues(alpha: 0.05),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: SettingsSharedUI.buildModernTile(
-              icon: Icons.cloud_sync,
-              color: Colors.blueAccent,
-              title: 'ตั้งค่าการเชื่อมต่อ (API)',
-              subtitle: 'Cloudflare Tunnel URL',
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const PosConfigScreen()),
-              ),
+            child: Column(
+              children: [
+                SettingsSharedUI.buildModernTile(
+                  icon: Icons.cloud_sync,
+                  color: Colors.blueAccent,
+                  title: 'ตั้งค่าการเชื่อมต่อ (API)',
+                  subtitle: 'Cloudflare Tunnel URL',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PosConfigScreen()),
+                  ),
+                ),
+                SettingsSharedUI.buildDivider(),
+                SettingsSharedUI.buildModernTile(
+                  icon: Icons.print,
+                  color: Colors.deepPurple,
+                  title: 'ตั้งค่าเครื่องพิมพ์ (Printer)',
+                  subtitle: 'ใบเสร็จ / ใบส่งของ / Auto Print',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 24),
-        ]
+        ],
       ],
     );
   }

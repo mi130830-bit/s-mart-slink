@@ -29,6 +29,8 @@ class AppStateManager {
       final role = user?.role.name.toLowerCase();
 
       if (role == AppConstants.rolePending) return;
+      // พนักงานปั้ม ไม่ต้องรับข้อมูลใดๆ เพิ่มเติม (ใช้แค่หน้าลงเวลาเข้างาน)
+      if (role == 'gas_station' || role == 'gasstation') return;
 
       log('Starting data listeners for role: $role');
 

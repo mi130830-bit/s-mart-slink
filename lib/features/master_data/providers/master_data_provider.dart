@@ -43,13 +43,8 @@ class MasterDataProvider with ChangeNotifier {
     }
   }
 
-  // เรียกเมื่อมีการเพิ่ม/ลบ ข้อมูล เพื่อ refresh (Manual Refresh)
-  Future<void> refreshMasterData() async => await loadMasterData();
-
-  // Backward Compatibility (แต่ข้างในเปลี่ยนเป็น Load Once)
-  void startListeningToMasterData() {
-    loadMasterData();
-  }
+  // เรียกเพื่อ Backward Compatibility (พฤติกรรมเหมือน loadMasterData)
+  void startListeningToMasterData() => loadMasterData();
 
   void stopListening() {
     // No-op for Future based approach, just clear local data if needed
@@ -58,14 +53,7 @@ class MasterDataProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // --- Actions ---
-  Future<void> addDeliverer(String name) async =>
-      await _masterDataService.addDeliverer(name);
-  Future<void> updateDeliverer(String id, String newName) async =>
-      await _masterDataService.updateDeliverer(id, newName);
-  Future<void> deleteDeliverer(String id) async =>
-      await _masterDataService.deleteDeliverer(id);
-
+  // --- Car Actions (ใช้โดย CarListScreen) ---
   Future<void> addCar(String name, String licensePlate) async =>
       await _masterDataService.addCar(name, licensePlate);
   Future<void> updateCar(String id, String newName, String newPlate) async =>
