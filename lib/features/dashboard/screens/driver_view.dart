@@ -13,7 +13,7 @@ import 'package:s_link/features/shop_log/screens/create_work_log_screen.dart';
 import 'package:s_link/features/dashboard/screens/pickup_screen.dart'; // ✅ Import PickupScreen
 // Removed attendance_screen.dart
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:s_link/core/services/sound_service.dart';
 import 'package:s_link/core/config/app_constants.dart';
 import 'package:s_link/core/services/startup_service.dart';
 
@@ -393,7 +393,7 @@ class _DriverSettingsTab extends StatefulWidget {
 }
 
 class _DriverSettingsTabState extends State<_DriverSettingsTab> {
-  final AudioPlayer _player = AudioPlayer();
+
   String? _currentSound;
 
   @override
@@ -414,7 +414,7 @@ class _DriverSettingsTabState extends State<_DriverSettingsTab> {
 
   @override
   void dispose() {
-    _player.dispose();
+    SoundService.stop();
     super.dispose();
   }
 
@@ -429,12 +429,7 @@ class _DriverSettingsTabState extends State<_DriverSettingsTab> {
       });
 
       // Play preview
-      try {
-        await _player.stop();
-        await _player.play(AssetSource('sounds/$sound.mp3'));
-      } catch (e) {
-        debugPrint('Error playing sound: $e');
-      }
+      SoundService.playSound(sound);
     }
   }
 

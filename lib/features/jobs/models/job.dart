@@ -251,6 +251,7 @@ class Job {
       jobType: row['jobType']?.toString() ?? 'delivery',
       details: row['note']?.toString(),
       destinationLocation: destLocation,
+      proofImage: row['billImageUrl']?.toString(),
     );
   }
 

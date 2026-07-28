@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:s_link/features/pos/services/pos_api_service.dart';
 
 class PosConfigScreen extends StatefulWidget {
@@ -55,6 +56,17 @@ class _PosConfigScreenState extends State<PosConfigScreen> {
           _resultColor = Colors.red;
         }
       });
+    }
+
+    if (success) {
+      try {
+        await FirebaseFirestore.instance.collection('app_settings').doc('api_config').set({
+          'base_url': url,
+          'updated_at': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('Failed to sync to cloud: $e');
+      }
     }
   }
 

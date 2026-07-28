@@ -67,25 +67,25 @@ class PosConfigSection extends StatelessWidget {
           const SizedBox(height: 24),
         ],
 
-        // --- Non-Driver: POS Config ---
-        if (!isDriver) ...[
-          SettingsSharedUI.buildSectionHeader('ตั้งค่าระบบ POS (POS Config)'),
-          Card(
-            elevation: 2,
-            shadowColor: Colors.black.withValues(alpha: 0.05),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            child: Column(
-              children: [
-                SettingsSharedUI.buildModernTile(
-                  icon: Icons.cloud_sync,
-                  color: Colors.blueAccent,
-                  title: 'ตั้งค่าการเชื่อมต่อ (API)',
-                  subtitle: 'Cloudflare Tunnel URL',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const PosConfigScreen()),
-                  ),
+        // --- POS Config (API & Printer) ---
+        SettingsSharedUI.buildSectionHeader('ตั้งค่าระบบ (System Config)'),
+        Card(
+          elevation: 2,
+          shadowColor: Colors.black.withValues(alpha: 0.05),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: Column(
+            children: [
+              SettingsSharedUI.buildModernTile(
+                icon: Icons.cloud_sync,
+                color: Colors.blueAccent,
+                title: 'ตั้งค่าการเชื่อมต่อ (API)',
+                subtitle: 'Cloudflare Tunnel URL',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const PosConfigScreen()),
                 ),
+              ),
+              if (!isDriver) ...[
                 SettingsSharedUI.buildDivider(),
                 SettingsSharedUI.buildModernTile(
                   icon: Icons.print,
@@ -98,10 +98,10 @@ class PosConfigSection extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
+            ],
           ),
-          const SizedBox(height: 24),
-        ],
+        ),
+        const SizedBox(height: 24),
       ],
     );
   }

@@ -157,11 +157,60 @@ class SyncService {
         customerId: data['customerId'],
         amount: data['collectedCod'],
         driverId: driverUid,
+        orderId: data['orderId'], // ✅ FIX: Send orderId so backend can map correctly
       );
       if (!success) {
-        throw Exception('Failed to sync COD payment to backend API.');
+        log('⚠️ SyncService: COD sync failed. (API returned false)');
+      } else {
+        log('SyncService: COD sync successful.');
       }
-      log('SyncService: COD sync successful.');
+    }
+
+    // 3.5 Notify POS Backend to save in delivery_history MySQL (Same as JobProvider._notifyPosBackend)
+    try {
+      final doc = await FirebaseFirestore.instance.collection('jobs').doc(jobId).get();
+      if (doc.exists) {
+        final jobInfo = doc.data()!;
+        final customer = jobInfo['customer'] as Map<String, dynamic>? ?? {};
+        final double totalAmount = (jobInfo['price'] as num?)?.toDouble() ?? data['collectedCod'] ?? 0.0;
+        
+        List<String> drivers = [];
+        String vehiclePlate = '';
+        final deliveryTeam = data['deliveryTeam'] as List<dynamic>? ?? [];
+        
+        for (var m in deliveryTeam) {
+          if (m is Map) {
+            if (m['type'] != 'car') {
+              final name = m['name']?.toString() ?? '';
+              if (name.isNotEmpty) drivers.add(name);
+            }
+            if (m['type'] == 'car' && vehiclePlate.isEmpty) {
+              vehiclePlate = m['vehicle_plate']?.toString() ?? m['name']?.toString() ?? '';
+            }
+          }
+        }
+        
+        final body = jsonEncode({
+          'orderId': data['orderId'] ?? jobInfo['localOrderId'] ?? jobInfo['order_id'] ?? 0,
+          'firebaseJobId': jobId,
+          'driverName': drivers.join(', '),
+          'vehiclePlate': vehiclePlate,
+          'customerName': customer['name'] ?? '',
+          'customerPhone': customer['phoneNumber'] ?? customer['phone'] ?? '',
+          'customerAddress': customer['address'] ?? '',
+          'totalAmount': totalAmount,
+          'jobType': jobInfo['job_type'] ?? 'delivery',
+          'note': jobInfo['details'] ?? '',
+          'latitude': lat,
+          'longitude': lng,
+          'billImageUrl': jobInfo['proof_image'] ?? downloadUrl,
+        });
+
+        await PosApiService().postRaw('/jobs/complete', body);
+        log('✅ SyncService: POS Backend delivery_history recorded.');
+      }
+    } catch (e) {
+      log('⚠️ SyncService: POS Backend delivery_history failed (non-critical): $e');
     }
 
     // 4. Cleanup: Delete local image file

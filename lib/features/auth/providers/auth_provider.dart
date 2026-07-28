@@ -7,6 +7,7 @@ import 'dart:developer';
 // Import Services & Models
 import 'package:s_link/features/auth/services/auth_service.dart';
 import 'package:s_link/features/auth/services/user_service.dart';
+import 'package:s_link/features/pos/services/pos_api_service.dart';
 import 'package:s_link/core/services/notification_service.dart';
 import 'package:s_link/features/auth/models/user.dart';
 
@@ -58,6 +59,9 @@ class AuthenticationProvider with ChangeNotifier {
 
         // ดึงข้อมูล User Profile จาก Firestore
         _currentUser = await _userService.getUserById(user.uid);
+
+        // ✅ Sync API URL from Cloud for all roles (Lazy-friendly!)
+        await PosApiService().syncBaseUrlFromCloud();
 
         if (_currentUser == null) {
           // ป้องกันการเข้าถึงด้วยบัญชีที่ไม่มี User Profile ใน Firestore

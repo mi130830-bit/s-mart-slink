@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:s_link/features/pos/models/pos_product.dart';
 import 'package:s_link/features/pos/models/pos_customer.dart';
 import 'package:s_link/features/auth/services/auth_http_client.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 part 'extensions/pos_api_product_extension.dart';
 part 'extensions/pos_api_stock_extension.dart';
@@ -55,6 +56,25 @@ class PosApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_prefKeyBaseUrl, url);
     _baseUrl = url;
+  }
+
+  // ✅ Auto-Sync from Cloud (Firestore)
+  Future<void> syncBaseUrlFromCloud() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('app_settings').doc('api_config').get();
+      if (doc.exists && doc.data() != null) {
+        final cloudUrl = doc.data()!['base_url'] as String?;
+        if (cloudUrl != null && cloudUrl.isNotEmpty) {
+          final localUrl = await getBaseUrl();
+          if (localUrl != cloudUrl) {
+            await setBaseUrl(cloudUrl);
+            debugPrint('🔄 API URL synced from cloud: $cloudUrl');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error syncing API URL: $e');
+    }
   }
 
   // Helper: Build Full URL

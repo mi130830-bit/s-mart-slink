@@ -61,7 +61,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       // 4. Show Notification
       final AndroidNotificationDetails androidPlatformChannelSpecifics =
           AndroidNotificationDetails(
-        AppConstants.notificationChannelId,
+        '${AppConstants.notificationChannelId}_$soundName',
         AppConstants.notificationChannelName,
         channelDescription: AppConstants.notificationChannelDesc,
         importance: Importance.max,
@@ -219,14 +219,16 @@ class StartupService {
       // If sound changed, we MUST delete the old channel to apply new sound
       // because Android Notification Channels are immutable after creation.
       if (lastAppliedSound != null && lastAppliedSound != soundName) {
+        final oldDynamicChannelId = '${AppConstants.notificationChannelId}_$lastAppliedSound';
         await androidPlugin.deleteNotificationChannel(
-            channelId: AppConstants.notificationChannelId);
-        log('Deleted old channel to update sound from $lastAppliedSound to $soundName');
+            channelId: oldDynamicChannelId);
+        log('Deleted old channel ($oldDynamicChannelId) to update sound to $soundName');
       }
 
       // Create (or recreate) the channel with the current preferred sound
+      final String dynamicChannelId = '${AppConstants.notificationChannelId}_$soundName';
       final AndroidNotificationChannel channel = AndroidNotificationChannel(
-        AppConstants.notificationChannelId, // Use the SAME ID as Manifest
+        dynamicChannelId, // ✅ Use Dynamic ID to bypass Android Cache
         AppConstants.notificationChannelName,
         description: AppConstants.notificationChannelDesc,
         importance: Importance.max,
@@ -244,9 +246,11 @@ class StartupService {
   static Future<void> _showNotification(RemoteMessage message) async {
     final soundName = await _getPreferredSound();
 
+    final String dynamicChannelId = '${AppConstants.notificationChannelId}_$soundName';
+
     final AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
-      AppConstants.notificationChannelId, // Use fixed ID
+      dynamicChannelId, // ✅ Use Dynamic ID
       AppConstants.notificationChannelName,
       channelDescription: AppConstants.notificationChannelDesc,
       importance: Importance.max,

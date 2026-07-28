@@ -30,7 +30,12 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
 
     try {
       // 1. List Printers
-      final printers = await Printing.listPrinters();
+      List<Printer> printers = [];
+      try {
+        printers = await Printing.listPrinters();
+      } catch (e) {
+        debugPrint('Printing.listPrinters() not supported on this platform: $e');
+      }
 
       // 2. Load Preferences
       final receiptName = await _printerService.getReceiptPrinterName();
@@ -43,7 +48,9 @@ class _PrinterSettingsScreenState extends State<PrinterSettingsScreen> {
           return printers.firstWhere((p) => p.name == name);
         } catch (_) {
           // Fallback: Create a dummy printer object to show "Missing: Name"
-          return Printer(name: name, url: name, model: 'Unknown');
+          final dummy = Printer(name: name, url: name, model: 'Unknown');
+          printers.add(dummy);
+          return dummy;
         }
       }
 

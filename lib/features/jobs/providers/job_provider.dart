@@ -17,6 +17,7 @@ import 'package:s_link/features/pos/services/pos_api_service.dart';
 import 'package:s_link/core/services/notification_service.dart';
 import 'package:s_link/features/jobs/models/job.dart';
 import 'package:s_link/features/auth/models/user.dart'; // User moved to Auth
+import 'package:http/http.dart' as http;
 // import 'package:s_link/features/jobs/models/job_status.dart'; // No longer used in filters
 
 class JobProvider with ChangeNotifier {
@@ -370,6 +371,31 @@ class JobProvider with ChangeNotifier {
       ).catchError((e) =>
           log('⚠️ [JobProvider] บันทึก POS backend ไม่สำเร็จ (ไม่กระทบต่อการปิดงาน): $e'));
 
+      // ✅ แจ้ง GpsController ให้แสดงสถานะ กำลังกลับร้าน
+      try {
+        // ✅ ดึงชื่อรถจาก deliveryTeamData ที่ส่งเข้ามา
+        final vehicleEntry = deliveryTeamData
+            .where((e) => e['type'] == 'car' || e['type'] == 'vehicle')
+            .firstOrNull;
+        final String vehicleNameForGps = vehicleEntry != null
+            ? ((vehicleEntry['licensePlate']?.toString().isNotEmpty == true
+                ? vehicleEntry['licensePlate']
+                : vehicleEntry['name'])?.toString() ?? 'ไม่ระบุรถ')
+            : 'ไม่ระบุรถ';
+
+        await http.post(
+          Uri.parse('https://api.namecheap.work/api/v1/gps/update_job'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'vehicle': vehicleNameForGps,
+            'jobStatus': 'กำลังกลับร้าน'
+          }),
+        ).timeout(const Duration(seconds: 3));
+      } catch (e) {
+        log('Failed to reset GPS Job Status: $e');
+      }
+
+
       // ✅ หลังปิดงานแล้ว ค่อย throw error ถ้า COD fail (UI จะ show warning แต่งานปิดแล้ว)
       if (!codDebtSuccess) {
         // ไม่ rethrow แต่ log ไว้ — ให้ admin ไปแก้ manual
@@ -431,6 +457,7 @@ class JobProvider with ChangeNotifier {
         'note': data['details'] ?? '',
         'latitude': proofLocation.latitude,
         'longitude': proofLocation.longitude,
+        'billImageUrl': data['proof_image'] ?? '',
       });
 
       final result = await PosApiService().postRaw('/jobs/complete', body);
@@ -558,6 +585,40 @@ class JobProvider with ChangeNotifier {
           .collection('jobs')
           .doc(jobId)
           .update(updates);
+
+      // แจ้ง GpsController ว่ารถคันนี้เริ่มส่งงานแล้ว
+      try {
+        final jobCustomerName = jobToUpdate?.customer.name ?? 'ไม่ระบุชื่อ';
+        
+        String teamNames = '';
+        if (jobToUpdate != null && jobToUpdate.deliveryTeam.isNotEmpty) {
+           final people = jobToUpdate.deliveryTeam.where((e) => e.type != 'vehicle').map((e) => e.name).toList();
+           if (people.isNotEmpty) {
+             teamNames = ' (${people.join(', ')})';
+           }
+        }
+        
+        // ✅ ดึงชื่อรถจาก DeliveryTeam (type == 'car' หรือ 'vehicle')
+        final vehicleItemDep = jobToUpdate?.deliveryTeam
+            .where((e) => e.type == 'car' || e.type == 'vehicle')
+            .firstOrNull;
+        final String vehicleNameDep = vehicleItemDep != null
+            ? (vehicleItemDep.licensePlate?.isNotEmpty == true
+                ? vehicleItemDep.licensePlate!
+                : vehicleItemDep.name)
+            : 'ไม่ระบุรถ';
+
+        await http.post(
+          Uri.parse('https://api.namecheap.work/api/v1/gps/update_job'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'vehicle': vehicleNameDep,
+            'jobStatus': 'กำลังส่งของ: $jobCustomerName$teamNames'
+          }),
+        ).timeout(const Duration(seconds: 3));
+      } catch (e) {
+        log('Failed to update GPS Job Status: $e');
+      }
 
 
     } catch (e) {

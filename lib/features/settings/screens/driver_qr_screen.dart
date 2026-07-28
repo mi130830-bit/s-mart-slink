@@ -18,8 +18,13 @@ class _PaymentConfig {
     this.staticQrImage,
   });
 
-  bool get isStatic => qrMode == 'static' && staticQrImage != null;
+  // Smart Fallback: เป็น Static ถ้าระบุโหมด static มีรูป หรือโหมด dynamic แต่ไม่มี ID แล้วมีรูปแทน
+  bool get isStatic => (qrMode == 'static' && staticQrImage != null) ||
+      (qrMode == 'dynamic' && promptPayId.isEmpty && staticQrImage != null);
+
   bool get hasDynamic => promptPayId.isNotEmpty;
+  
+  bool get isNativeDynamic => qrMode == 'dynamic' && promptPayId.isNotEmpty;
 }
 
 /// หน้าแสดง QR PromptPay แบบ Fullscreen สำหรับคนขับรถเก็บเงินปลายทาง (COD)
@@ -107,13 +112,26 @@ class _DriverQrScreenState extends State<DriverQrScreen>
         }
 
         if (!mounted) return;
+
+        final config = _PaymentConfig(
+          promptPayId: promptPayId,
+          qrMode: qrMode,
+          staticQrImage: imageBytes,
+        );
+
+        if (!config.isStatic && !config.hasDynamic) {
+          setState(() {
+            _isLoading = false;
+            _error = 'ตั้งค่าการรับเงินไม่สมบูรณ์\nกรุณาระบุ PromptPay ID หรือ อัปโหลดรูป QR ใน POS Desktop';
+          });
+          return;
+        }
+
         setState(() {
-          _config = _PaymentConfig(
-            promptPayId: promptPayId,
-            qrMode: qrMode,
-            staticQrImage: imageBytes,
-          );
+          _config = config;
           _isLoading = false;
+          // ถ้าเป็น dynamic แต่แรก ให้ล็อคยอด COD อัตโนมัติไปเลย
+          _forceDynamic = _config!.isNativeDynamic;
         });
         _buildDynamicPayload();
         return;
@@ -129,7 +147,7 @@ class _DriverQrScreenState extends State<DriverQrScreen>
     if (localId.isEmpty) {
       setState(() {
         _isLoading = false;
-        _error = 'ยังไม่ได้ตั้งค่า PromptPay ในระบบ\nกรุณาตั้งค่าที่ POS Desktop ก่อน';
+        _error = 'การเชื่อมต่อขัดข้อง\nและยังไม่ได้ตั้งค่า Local PromptPay';
       });
       return;
     }
@@ -140,6 +158,7 @@ class _DriverQrScreenState extends State<DriverQrScreen>
         qrMode: 'dynamic',
       );
       _isLoading = false;
+      _forceDynamic = true; // ล็อคยอดอัตโนมัติเมื่อใช้ Fallback dynamic
     });
     _buildDynamicPayload();
   }
@@ -415,12 +434,16 @@ class _DriverQrScreenState extends State<DriverQrScreen>
                         _buildDynamicPayload();
                       },
                       icon: Icon(
-                        _forceDynamic ? Icons.image : Icons.lock,
+                        _forceDynamic 
+                            ? (_config!.isStatic ? Icons.image : Icons.lock_open)
+                            : Icons.lock,
                         size: 18,
                       ),
                       label: Text(
                         _forceDynamic
-                            ? 'กลับไปใช้ QR จากร้าน'
+                            ? (_config!.isStatic 
+                                ? 'กลับไปใช้รูป QR จากร้าน' 
+                                : 'ปลดล็อคยอด (ลูกค้ากรอกเอง)')
                             : 'ล็อคยอด ${widget.codAmount!.toStringAsFixed(0)} บาทใน QR',
                       ),
                       style: OutlinedButton.styleFrom(

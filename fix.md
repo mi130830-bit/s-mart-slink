@@ -2,6 +2,17 @@
 
 ---
 
+## [2026-07-14] Phase 8: Delivery Proof Image & Offline COD Sync
+**สิ่งที่ดำเนินการ (POS Desktop & S-Link):**
+1. **Offline COD Payment Sync:**
+   - [S-Link] แก้ไข `sync_service.dart` ให้ส่ง `orderId` ไปยัง API `/jobs/complete` และเรียกใช้ `payCodDebt` เพื่อให้ระบบ POS Desktop ตัดยอดหนี้ COD อัตโนมัติแม้คนขับรถจะทำงานแบบ Offline
+2. **Delivery Proof Image Sync (รายงานการส่งของมีรูป):**
+   - [S-Link] เพิ่มการส่ง `billImageUrl` (ดึงจาก `proof_image` ของ Firebase) เข้าไปใน payload ของ `/jobs/complete` ทั้งแบบ Online (`job_provider.dart`) และ Offline (`sync_service.dart`)
+   - [POS Desktop] อัปเดตตรรกะใน `job_controller.dart` เพื่ออ่าน `billImageUrl` และบันทึกลงคอลัมน์ `billImageUrl` ในฐานข้อมูล MySQL (`delivery_history`)
+   - [S-Link] เพิ่มการแปลง `billImageUrl` เข้าไปใน `Job.fromHistory()` เพื่อให้แสดงรูปในหน้ารายงานประวัติการส่งของฝั่งคนขับรถได้ (ตามความต้องการที่ระบุว่าใน POS ไม่ต้องแสดงรูป ให้แสดงแค่ S-Link)
+3. **การตรวจสอบความเรียบร้อย:**
+   - รัน `flutter analyze` ทั้งสองโปรเจกต์ โค้ดผ่านไม่มี syntax error ที่ขัดขวางการทำงาน
+
 ## [2026-07-02] Driver QR — ย้ายจาก Settings → Dashboard Card
 
 ### 📋 สรุป
@@ -81,3 +92,15 @@
 - `flutter analyze` → **No issues found!**
 - `deliverers` collection ยังถูกใช้โดย `job_detail_screen.dart` และ `work_log_history_screen.dart` สำหรับ lookup ชื่อทีมงาน — **ยังเก็บไว้ถูกต้อง**
 - `customer.dart` (embedded value object ใน Job) — **ยังเก็บไว้ถูกต้อง** ต่างจาก `customer_master.dart` (standalone Firestore doc)
+
+### วันที่ 24 กรกฎาคม 2026
+- **GPS Integration**: ปรับปรุงหน้า ApproveDepartureDialog ให้ส่งชื่อลูกค้า (Job Customer Name) ไปบอกหน้าจอ Dashboard แผนที่บน POS Backend อัตโนมัติเวลาคนขับกดปุ่ม "ปล่อยรถ"
+
+### 2026-07-28: 🔧 Smart Fallback & Auto-Lock COD สำหรับหน้า QR Code
+- **ไฟล์ที่แก้ไข:** `lib/features/settings/screens/driver_qr_screen.dart`
+- **รายละเอียด:**
+  - **Smart Fallback:** ปรับปรุงให้แสดง Static QR (รูปภาพ) ได้ทันทีหากไม่ได้ตั้งค่า PromptPay ID แต่มีการอัปโหลดรูปภาพไว้ แม้ว่าโหมดในระบบจะเป็น `dynamic` ก็ตาม
+  - **Auto-Lock COD:** เพิ่มระบบล็อคยอด COD ลงใน QR Code แบบ Dynamic อัตโนมัติ โดยไม่ต้องให้คนขับกดปุ่มบังคับสลับโหมดอีกต่อไป
+  - **Error Handling:** ปรับปรุงข้อความแจ้งเตือนกรณีที่ไม่ได้ตั้งค่าการรับเงินให้ชัดเจนขึ้น และรองรับกรณี Offline Fallback โดยใช้ Local ID แทน
+  - **UI/UX:** ปรับปรุงปุ่มกดสลับโหมดให้แสดงสถานะและคำแนะนำที่สอดคล้องกับพฤติกรรมจริงมากขึ้น
+

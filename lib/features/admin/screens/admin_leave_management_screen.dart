@@ -81,7 +81,9 @@ class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
 
   void _calculateTotalDays() {
     if (_leaveFormat == 'FULL_DAY') {
-      final diff = _endDate.difference(_startDate).inDays;
+      final start = DateTime(_startDate.year, _startDate.month, _startDate.day);
+      final end = DateTime(_endDate.year, _endDate.month, _endDate.day);
+      final diff = end.difference(start).inDays;
       _totalDays = (diff >= 0 ? diff + 1 : 1).toDouble();
     } else if (_leaveFormat == 'HALF_MORNING' ||
         _leaveFormat == 'HALF_AFTERNOON') {
@@ -496,19 +498,20 @@ class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
 
     try {
       final collection = FirebaseFirestore.instance.collection('holiday_logs');
-      // Firebase limit batch delete to 500. We do logic in loop if needed, but here simple batch for now.
-      // Better: Get in chunks
-      final snapshot = await collection.limit(500).get();
-      final batch = FirebaseFirestore.instance.batch();
-
-      for (var doc in snapshot.docs) {
-        batch.delete(doc.reference);
+      int totalDeleted = 0;
+      while (true) {
+        final snapshot = await collection.limit(500).get();
+        if (snapshot.docs.isEmpty) break;
+        final batch = FirebaseFirestore.instance.batch();
+        for (var doc in snapshot.docs) {
+          batch.delete(doc.reference);
+        }
+        await batch.commit();
+        totalDeleted += snapshot.docs.length;
       }
 
-      await batch.commit();
-
       if (mounted) {
-        SnackbarUtils.showLeft(context, 'ลบข้อมูลเรียบร้อย');
+        SnackbarUtils.showLeft(context, 'ลบข้อมูลเรียบร้อยแล้ว $totalDeleted รายการ');
       }
     } catch (e) {
       if (mounted) {

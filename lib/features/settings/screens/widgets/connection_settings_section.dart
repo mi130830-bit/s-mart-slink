@@ -2,8 +2,8 @@ import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:audioplayers/audioplayers.dart';
 import 'package:s_link/core/config/app_constants.dart';
+import 'package:s_link/core/services/sound_service.dart';
 import 'package:s_link/core/providers/theme_provider.dart';
 import 'package:s_link/core/services/startup_service.dart';
 import 'package:s_link/features/auth/providers/auth_provider.dart';
@@ -45,10 +45,7 @@ class _ConnectionSettingsSectionState
     final prefs = await SharedPreferences.getInstance();
     final currentSound =
         prefs.getString('notification_sound') ?? AppConstants.notificationSound;
-
     if (!mounted) return;
-
-    final player = AudioPlayer();
 
     await showDialog(
       context: context,
@@ -72,12 +69,7 @@ class _ConnectionSettingsSectionState
                       onChanged: (val) { // ignore: deprecated_member_use
                         if (val != null) {
                           setState(() => tempSelected = val);
-                          try {
-                            player.stop();
-                            player.play(AssetSource('sounds/$val.mp3'));
-                          } catch (e) {
-                            debugPrint('Error playing sound: $e');
-                          }
+                            SoundService.playSound(val);
                         }
                       },
                     );
@@ -87,14 +79,14 @@ class _ConnectionSettingsSectionState
               actions: [
                 TextButton(
                   onPressed: () {
-                    player.dispose();
+                    SoundService.stop();
                     Navigator.pop(ctx);
                   },
                   child: const Text('ยกเลิก'),
                 ),
                 ElevatedButton(
                   onPressed: () async {
-                    player.dispose();
+                    SoundService.stop();
                     await prefs.setString('notification_sound', tempSelected);
                     await StartupService.setupNotificationChannel();
                     if (context.mounted) {
@@ -112,7 +104,7 @@ class _ConnectionSettingsSectionState
       },
     ).then((_) {
       try {
-        player.dispose();
+        SoundService.stop();
       } catch (_) {}
     });
   }

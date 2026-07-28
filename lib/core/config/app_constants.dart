@@ -2,7 +2,7 @@
 
 class AppConstants {
   // App Info
-  static const String appName = 'ร้าน ส.บริการ';
+  static const String appName = 'ร้าน ส.บริการ ท่าข้าม';
 
   // Notification Channels
   static const String notificationChannelId = 'opsmate_alert_channel_v3';

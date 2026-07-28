@@ -78,9 +78,11 @@ class NotificationService {
     final soundName =
         prefs.getString('notification_sound') ?? AppConstants.notificationSound;
 
+    final String dynamicChannelId = '${AppConstants.notificationChannelId}_$soundName';
+
     final AndroidNotificationDetails androidDetails =
         AndroidNotificationDetails(
-      AppConstants.notificationChannelId,
+      dynamicChannelId,
       AppConstants.notificationChannelName,
       channelDescription: AppConstants.notificationChannelDesc,
       importance: Importance.max,

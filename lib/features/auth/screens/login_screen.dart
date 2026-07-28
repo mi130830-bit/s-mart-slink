@@ -80,7 +80,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'ร้าน ส.บริการ',
+                  'ร้าน ส.บริการ ท่าข้าม',
                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 40),
