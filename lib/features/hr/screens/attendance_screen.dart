@@ -174,9 +174,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final pos = await _checkLocation();
     if (pos == null) return; // ไม่ผ่านเรื่องระยะทางหรือ GPS
 
-    // final selfiePath = await _takeSelfie(); // รอเปิดใช้งานในอนาคต
-
-    final log = AttendanceLog(
+    final logData = AttendanceLog(
       id: '',
       userId: user.id,
       userName: user.name,
@@ -188,8 +186,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
 
     setState(() => _isLoading = true);
-    await _service.checkIn(log);
-    await _loadTodayLog();
+    try {
+      await _service.checkIn(logData);
+      await _loadTodayLog();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e', isError: true);
+      }
+    }
   }
 
   Future<void> _handleCheckOut() async {
@@ -200,8 +205,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (pos == null) return;
 
     setState(() => _isLoading = true);
-    await _service.checkOut(user.id, pos.latitude, pos.longitude);
-    await _loadTodayLog();
+    try {
+      await _service.checkOut(user.id, pos.latitude, pos.longitude);
+      await _loadTodayLog();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e', isError: true);
+      }
+    }
   }
 
   Future<void> _handleTempOut() async {
@@ -212,8 +224,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (pos == null) return;
 
     setState(() => _isLoading = true);
-    await _service.tempOut(user.id, pos.latitude, pos.longitude);
-    await _loadTodayLog();
+    try {
+      await _service.tempOut(user.id, pos.latitude, pos.longitude);
+      await _loadTodayLog();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e', isError: true);
+      }
+    }
   }
 
   Future<void> _handleBackToWork() async {
@@ -224,8 +243,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (pos == null) return;
 
     setState(() => _isLoading = true);
-    await _service.backToWork(user.id, pos.latitude, pos.longitude);
-    await _loadTodayLog();
+    try {
+      await _service.backToWork(user.id, pos.latitude, pos.longitude);
+      await _loadTodayLog();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e', isError: true);
+      }
+    }
   }
 
   @override
