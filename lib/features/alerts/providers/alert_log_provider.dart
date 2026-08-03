@@ -8,6 +8,9 @@ import 'package:s_link/features/alerts/services/alert_log_service.dart';
 import 'package:s_link/features/alerts/services/shortage_repository.dart';
 import 'package:s_link/features/alerts/models/shortage_log_model.dart';
 import 'package:s_link/features/jobs/models/shop_work_log.dart';
+import 'package:s_link/features/hr/services/work_log_sync_service.dart';
+import 'package:s_link/features/hr/models/shop_work_log_isar.dart';
+import 'package:s_link/services/isar_service.dart';
 
 class AlertLogProvider with ChangeNotifier {
   final AlertLogService _alertLogService;
@@ -49,12 +52,27 @@ class AlertLogProvider with ChangeNotifier {
     });
 
     // 2. ฟัง Work Logs (ประวัติงานหลังบ้าน) - เฉพาะ Admin เท่านั้นที่เห็นทั้งหมด
-    // (หรือถ้าจะให้ Driver เห็นของตัวเอง ต้องแก้ Logic ใน Service ให้รับ UID)
     if (role?.toLowerCase() == 'admin') {
+      final syncService = WorkLogSyncService(IsarService());
+      
+      // ดึงข้อมูลล่าสุดจาก API ลง Local
+      syncService.syncDownWorkLogs();
+      
       _allWorkLogsSubscription =
-          _alertLogService.getAllWorkLogs().listen((data) {
-        _allWorkLogs = data;
-        log('AlertLogProvider: Updated ${_allWorkLogs.length} work logs.');
+          syncService.watchWorkLogs().listen((isarData) {
+        _allWorkLogs = isarData.map((isarLog) {
+          return ShopWorkLogModel(
+            id: isarLog.syncId ?? isarLog.id.toString(),
+            delivererId: isarLog.delivererId ?? '',
+            loggedAt: isarLog.loggedAt ?? DateTime.now(),
+            items: isarLog.items?.map((item) => WorkItem(
+              description: item.description ?? '',
+              quantity: item.quantity ?? 1.0,
+              unit: item.unit ?? 'ครั้ง',
+            )).toList() ?? [],
+          );
+        }).toList();
+        log('AlertLogProvider: Updated ${_allWorkLogs.length} work logs from Isar.');
         notifyListeners();
       }, onError: (e) {
         log('AlertLogProvider Error (Logs): $e');
@@ -143,14 +161,22 @@ class AlertLogProvider with ChangeNotifier {
     }
   }
 
-  // 3. สร้างบันทึกงานหลังบ้าน
-  Future<void> createWorkLog(String delivererId, List<WorkItem> items) async =>
-      await _alertLogService.createWorkLog(delivererId, items);
+  // 3. สร้างบันทึกงานหลังบ้าน (Offline-First)
+  Future<void> createWorkLog(String delivererId, List<WorkItem> items) async {
+    final syncService = WorkLogSyncService(IsarService());
+    // Convert WorkItem to WorkItemIsar
+    final isarItems = items.map((e) => WorkItemIsar()
+      ..description = e.description
+      ..quantity = e.quantity
+      ..unit = e.unit).toList();
+      
+    await syncService.addWorkLog(delivererId, isarItems);
+  }
 
-  // ✅ 4. [เพิ่มใหม่] ลบบันทึกงานหลังบ้าน
+  // ✅ 4. [เพิ่มใหม่] ลบบันทึกงานหลังบ้าน (Offline-First)
   Future<void> deleteWorkLog(String logId) async {
-    await _alertLogService.deleteWorkLog(logId);
-    // ไม่ต้อง notifyListeners() เพราะเมื่อลบใน DB เสร็จ Stream ด้านบนจะทำงานและอัปเดต UI เอง
+    final syncService = WorkLogSyncService(IsarService());
+    await syncService.deleteWorkLog(logId);
   }
 
   // ✅ 5. ค้นหาสินค้า (Autocomplete)

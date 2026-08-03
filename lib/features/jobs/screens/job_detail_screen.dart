@@ -154,7 +154,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final currentUser = authProvider.currentUser;
     final masterDataProvider = Provider.of<MasterDataProvider>(context, listen: false);
 
-    final bool isHistory = widget.job.id.startsWith('HIST') || widget.job.id.startsWith('#HIST');
+    final bool isHistory = widget.job.id.startsWith('HIST') || widget.job.id.startsWith('history_') || widget.job.id.startsWith('#HIST');
     
     final appBar = AppBar(
       title: Text(isHistory ? 'งาน ${widget.job.id.replaceAll('#', '')}' : 'งาน #${widget.job.id.substring(0, 4).toUpperCase()}'),
@@ -218,6 +218,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final isRequester = authProvider.isUserRequester;
     final isHr = authProvider.isUserHr;
     final canApprove = isAdmin || isRequester || isHr;
+    final isPickup = currentJob.jobType == 'pickup' || currentJob.jobType == 'customer_pickup';
 
     String? driverNameDisplay;
     if (isCompleted || hasDriver) {
@@ -284,12 +285,12 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           ],
 
           // 5. Action Buttons
-          if (isAdmin || isRequester || isMyJob)
+          if ((isAdmin || isRequester || isMyJob) && !isPickup)
             if (!isCompleted && currentJob.isDepartureApproved)
               _buildCompleteButton(currentJob),
 
           // 6. Admin Approval Button
-          if (canApprove && !currentJob.isDepartureApproved && !isCompleted)
+          if (canApprove && !currentJob.isDepartureApproved && !isCompleted && !isPickup)
             _buildApprovalButton(masterDataProvider),
         ],
       ),
@@ -484,14 +485,31 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (job.proofImage != null)
+        if (job.proofImage != null && job.proofImage!.trim().isNotEmpty)
           GestureDetector(
             onTap: () => _openImage(job.proofImage!),
             child: Stack(
               alignment: Alignment.center,
               children: [
-                Image.network(job.proofImage!,
-                    height: 200, width: double.infinity, fit: BoxFit.cover),
+                Image.network(
+                  job.proofImage!,
+                  height: 200, 
+                  width: double.infinity, 
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    height: 200,
+                    width: double.infinity,
+                    color: Colors.grey[300],
+                    child: const Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.broken_image, size: 50, color: Colors.grey),
+                        SizedBox(height: 8),
+                        Text('รูปภาพไม่สมบูรณ์', style: TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  ),
+                ),
                 const Icon(Icons.zoom_in,
                     color: Colors.white,
                     size: 40,

@@ -21,10 +21,16 @@ class JobStatusCard extends StatelessWidget {
     String text;
     IconData icon;
 
+    final bool isPickup = job.jobType == 'pickup' || job.jobType == 'customer_pickup';
+
     if (isCompleted) {
       cardColor = Colors.grey;
       text = 'ส่งสำเร็จเรียบร้อย';
       icon = Icons.check_circle;
+    } else if (isPickup) {
+      cardColor = Colors.purple;
+      text = (job.details?.isNotEmpty == true) ? job.details! : 'งานรับสินค้าที่ร้าน';
+      icon = Icons.storefront;
     } else if (!job.isDepartureApproved) {
       cardColor = Colors.purple;
       text = 'รอแอดมินอนุมัติออกส่ง (กำลังขึ้นของ)';
@@ -48,7 +54,7 @@ class JobStatusCard extends StatelessWidget {
           Icon(icon, size: 40, color: cardColor),
           const SizedBox(height: 8),
           Text(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: cardColor)),
-          if (!job.isDepartureApproved && !isCompleted)
+          if (!job.isDepartureApproved && !isCompleted && !isPickup)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Text(

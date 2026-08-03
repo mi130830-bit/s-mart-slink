@@ -5,6 +5,10 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:s_link/features/pos/services/promptpay_helper.dart';
 import 'package:s_link/features/pos/services/pos_api_service.dart';
+import 'package:provider/provider.dart';
+import 'package:s_link/features/auth/providers/auth_provider.dart';
+import 'package:s_link/features/jobs/providers/job_provider.dart';
+import 'package:s_link/features/jobs/models/job.dart';
 
 /// โมเดลที่เก็บ Config QR จาก POS Desktop (via API)
 class _PaymentConfig {
@@ -54,7 +58,6 @@ class DriverQrScreen extends StatefulWidget {
 class _DriverQrScreenState extends State<DriverQrScreen>
     with SingleTickerProviderStateMixin {
   _PaymentConfig? _config;
-  String? _qrPayload;
   bool _isLoading = true;
   String? _error;
 
@@ -68,6 +71,7 @@ class _DriverQrScreenState extends State<DriverQrScreen>
   @override
   void initState() {
     super.initState();
+
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -133,7 +137,6 @@ class _DriverQrScreenState extends State<DriverQrScreen>
           // ถ้าเป็น dynamic แต่แรก ให้ล็อคยอด COD อัตโนมัติไปเลย
           _forceDynamic = _config!.isNativeDynamic;
         });
-        _buildDynamicPayload();
         return;
       }
     } catch (_) {}
@@ -160,20 +163,47 @@ class _DriverQrScreenState extends State<DriverQrScreen>
       _isLoading = false;
       _forceDynamic = true; // ล็อคยอดอัตโนมัติเมื่อใช้ Fallback dynamic
     });
-    _buildDynamicPayload();
   }
 
-  void _buildDynamicPayload() {
-    if (_config == null || _config!.promptPayId.isEmpty) return;
+  ({double? amount, String? customerName}) _getEffectiveCodData(BuildContext context) {
+    if (widget.codAmount != null) {
+      return (amount: widget.codAmount, customerName: widget.customerName);
+    }
+    try {
+      final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
+      final jobProvider = Provider.of<JobProvider>(context);
+      final currentUser = authProvider.currentUser;
+      if (currentUser == null) return (amount: null, customerName: null);
 
-    final hasCod = widget.codAmount != null && widget.codAmount! > 0;
-    final lockAmount = _forceDynamic && hasCod;
+      final jobs = jobProvider.driverAssignedJobs;
+      Job? activeCodJob;
+      
+      for (final job in jobs) {
+        final isMyJob = job.driverId == currentUser.uid ||
+            job.driverIds.contains(currentUser.uid) ||
+            job.deliveryTeam.any((m) => m.id == currentUser.uid);
 
-    final payload = PromptPayHelper.generatePayload(
-      _config!.promptPayId,
-      amount: lockAmount ? widget.codAmount : null,
-    );
-    setState(() => _qrPayload = payload);
+        if (isMyJob && job.status == 'shipping' && job.isDepartureApproved) {
+          final method = job.paymentMethod?.trim().toLowerCase();
+          final hasCod = job.price != null && job.price! > 0 && 
+                         (method == null || method.isEmpty || method == 'credit');
+          if (hasCod) {
+            activeCodJob = job;
+            debugPrint('DriverQrScreen: Found active COD job: ${job.id} for ${job.price}');
+            break;
+          }
+        }
+      }
+
+      if (activeCodJob != null) {
+        return (amount: activeCodJob.price, customerName: activeCodJob.customer.name);
+      } else {
+        debugPrint('DriverQrScreen: No active COD job found.');
+      }
+    } catch (e) {
+      debugPrint('DriverQrScreen Error: $e');
+    }
+    return (amount: null, customerName: null);
   }
 
   bool get _showStaticQr =>
@@ -181,9 +211,22 @@ class _DriverQrScreenState extends State<DriverQrScreen>
       _config!.isStatic &&
       !_forceDynamic;
 
+  double? get effectiveCodAmount => _getEffectiveCodData(context).amount;
+  String? get effectiveCustomerName => _getEffectiveCodData(context).customerName;
+  String? get currentQrPayload {
+    final codAmount = effectiveCodAmount;
+    final hasCod = codAmount != null && codAmount > 0;
+    if (_config == null || _config!.promptPayId.isEmpty) return null;
+    final lockAmount = _forceDynamic && hasCod;
+    return PromptPayHelper.generatePayload(
+      _config!.promptPayId,
+      amount: lockAmount ? codAmount : null,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final hasCod = widget.codAmount != null && widget.codAmount! > 0;
+    final hasCod = effectiveCodAmount != null && effectiveCodAmount! > 0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D1B2A),
@@ -260,7 +303,7 @@ class _DriverQrScreenState extends State<DriverQrScreen>
       child: Column(
         children: [
           // --- Banner ลูกค้า ---
-          if (widget.customerName != null && widget.customerName!.isNotEmpty)
+          if (effectiveCustomerName != null && effectiveCustomerName!.isNotEmpty)
             Container(
               margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -275,7 +318,7 @@ class _DriverQrScreenState extends State<DriverQrScreen>
                       color: Colors.tealAccent, size: 18),
                   const SizedBox(width: 8),
                   Text(
-                    'ลูกค้า: ${widget.customerName}',
+                    'ลูกค้า: $effectiveCustomerName',
                     style: const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
@@ -338,9 +381,9 @@ class _DriverQrScreenState extends State<DriverQrScreen>
                         height: 240,
                         fit: BoxFit.contain,
                       )
-                    : (_qrPayload != null
+                    : (currentQrPayload != null
                         ? QrImageView(
-                            data: _qrPayload!,
+                            data: currentQrPayload!,
                             version: QrVersions.auto,
                             size: 240,
                             eyeStyle: const QrEyeStyle(
@@ -402,8 +445,8 @@ class _DriverQrScreenState extends State<DriverQrScreen>
                   const SizedBox(width: 8),
                   Text(
                     _forceDynamic
-                        ? '฿ ${widget.codAmount!.toStringAsFixed(2)} (ล็อคยอดแล้ว)'
-                        : '฿ ${widget.codAmount!.toStringAsFixed(2)} (กรอกยอดเอง)',
+                        ? '฿ ${effectiveCodAmount!.toStringAsFixed(2)} (ล็อคยอดแล้ว)'
+                        : '฿ ${effectiveCodAmount!.toStringAsFixed(2)} (กรอกยอดเอง)',
                     style: TextStyle(
                       color: _forceDynamic
                           ? Colors.tealAccent
@@ -431,7 +474,7 @@ class _DriverQrScreenState extends State<DriverQrScreen>
                     child: OutlinedButton.icon(
                       onPressed: () {
                         setState(() => _forceDynamic = !_forceDynamic);
-                        _buildDynamicPayload();
+                        setState(() {});
                       },
                       icon: Icon(
                         _forceDynamic 
@@ -444,7 +487,7 @@ class _DriverQrScreenState extends State<DriverQrScreen>
                             ? (_config!.isStatic 
                                 ? 'กลับไปใช้รูป QR จากร้าน' 
                                 : 'ปลดล็อคยอด (ลูกค้ากรอกเอง)')
-                            : 'ล็อคยอด ${widget.codAmount!.toStringAsFixed(0)} บาทใน QR',
+                            : 'ล็อคยอด ${effectiveCodAmount!.toStringAsFixed(0)} บาทใน QR',
                       ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.tealAccent,

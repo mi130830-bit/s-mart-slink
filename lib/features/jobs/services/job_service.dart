@@ -134,9 +134,9 @@ class JobService {
   }) async {
     final Map<String, dynamic> updates = {
       'status': 'completed',
-      'proof_image': proofImage,
-      'proof_location': proofLocation,
-      'delivery_team': deliveryTeamData,
+      // 'proof_image': proofImage, // ✅ ไม่เก็บลง Firebase แล้ว (ไปเก็บที่ MySQL โดยตรงแทน)
+      // 'proof_location': proofLocation, // ✅ ไม่เก็บลง Firebase แล้ว
+      // 'delivery_team': deliveryTeamData, // ✅ ไม่เก็บลง Firebase แล้ว
       'completed_at': FieldValue.serverTimestamp(),
       'driver_id': driverUid,
     };

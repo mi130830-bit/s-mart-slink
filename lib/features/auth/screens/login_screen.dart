@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'register_screen.dart'; // **เพิ่ม Import**
+import 'package:shared_preferences/shared_preferences.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -22,6 +23,24 @@ class _LoginScreenState extends State<LoginScreen> {
   // ไม่ต้องใช้ _isLoading ใน State เพราะใช้จาก AuthProvider
 
   @override
+  void initState() {
+    super.initState();
+    _loadCachedCredentials();
+  }
+
+  Future<void> _loadCachedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final cachedUsername = prefs.getString('offline_username');
+    final cachedPassword = prefs.getString('offline_password');
+    if (cachedUsername != null && cachedUsername.isNotEmpty) {
+      _emailController.text = cachedUsername;
+    }
+    if (cachedPassword != null && cachedPassword.isNotEmpty) {
+      _passwordController.text = cachedPassword;
+    }
+  }
+
+  @override
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
@@ -33,20 +52,11 @@ class _LoginScreenState extends State<LoginScreen> {
       final authProvider =
           Provider.of<AuthenticationProvider>(context, listen: false);
 
-      String username = _emailController.text.trim().toLowerCase();
-      String loginEmail;
-      
-      if (username.contains('@')) {
-        // ถ้าระบุมี @ มาด้วย แสดงว่าเป็นระบบอีเมลเก่า (ให้เข้าได้เลย)
-        loginEmail = username;
-      } else {
-        // ถ้าไม่มี @ แสดงว่าเป็นระบบ Username ใหม่ ให้เติม Dummy Domain
-        loginEmail = '$username@s-link.local';
-      }
+      String username = _emailController.text.trim();
 
       try {
         await authProvider.login(
-            loginEmail, _passwordController.text.trim());
+            username, _passwordController.text.trim());
       } catch (e) {
         if (mounted) {
           SnackbarUtils.showLeft(context, 'Login Failed: ${e.toString()}');

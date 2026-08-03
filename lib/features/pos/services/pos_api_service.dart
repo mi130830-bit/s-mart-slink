@@ -38,9 +38,13 @@ class PosApiService {
     final prefs = await SharedPreferences.getInstance();
     _baseUrl = prefs.getString(_prefKeyBaseUrl);
 
-    // ✅ Fallback: Use Local mDNS if not set
+    // ✅ Fallback: Use Public Tunnel if not set (for Drivers on 4G)
     if (_baseUrl == null || _baseUrl!.isEmpty) {
-      _baseUrl = 'http://POS-SERVER.local:8080'; // Local Network Fallback
+      if (kIsWeb) {
+        _baseUrl = 'http://127.0.0.1:8080'; // Localhost Fallback for Web Testing
+      } else {
+        _baseUrl = 'https://api.namecheap.work'; // Public Tunnel Fallback for Mobile (4G)
+      }
       debugPrint('⚠️ Base URL not found. Using Fallback: $_baseUrl');
     }
 
@@ -188,14 +192,32 @@ class PosApiService {
 
   // ✅ 11. Generic Raw POST — ส่ง JSON body ไปยัง path ใดก็ได้
   // ใช้โดย JobProvider สำหรับ POST /api/v1/jobs/complete
-  Future<Map<String, dynamic>> postRaw(String path, String jsonBody) async {
+  Future<Map<String, dynamic>> postRaw(String path, dynamic body) async {
     final response = await _sendRequest(
       method: 'POST',
-      path: '/api/v1$path',
-      body: jsonBody,
+      path: path.startsWith('/api/v1') ? path : '/api/v1$path',
+      body: body,
     );
     if (response == null) return {'success': true};
     return response as Map<String, dynamic>;
+  }
+
+  // ✅ Generic Raw DELETE
+  Future<Map<String, dynamic>> deleteRaw(String path) async {
+    final response = await _sendRequest(
+      method: 'DELETE',
+      path: path.startsWith('/api/v1') ? path : '/api/v1$path',
+    );
+    if (response == null) return {'success': true};
+    return response as Map<String, dynamic>;
+  }
+
+  // ✅ Generic Raw GET
+  Future<dynamic> getRaw(String path) async {
+    return await _sendRequest(
+      method: 'GET',
+      path: path.startsWith('/api/v1') ? path : '/api/v1$path',
+    );
   }
 
   // ✅ 12. ดึง Payment Config จาก POS Desktop — Single Source of Truth

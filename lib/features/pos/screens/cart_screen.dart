@@ -8,6 +8,7 @@ import 'package:s_link/features/pos/repositories/pos_repository.dart';
 import 'package:s_link/features/pos/screens/payment_screen.dart';
 import 'package:s_link/features/pos/screens/product_search_screen.dart';
 import 'package:s_link/features/pos/widgets/customer_search_dialog.dart'; // Added
+import 'package:s_link/features/pos/screens/scanner_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -69,15 +70,28 @@ class _CartScreenState extends State<CartScreen> {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
         SnackbarUtils.showLeft(context, 'เพิ่ม ${exact.name} แล้ว');
       } else {
-        SnackbarUtils.showLeft(context, 'ไม่พบสินค้า (Product not found)', isError: true);
+        SnackbarUtils.showLeft(context, 'ไม่พบสินค้าจากบาร์โค้ดนี้',
+            isError: true);
+      }
+      _barcodeController.clear();
+      _barcodeFocus.requestFocus(); // คืน Focus ให้ช่องสแกน
+    } catch (e) {
+      if (mounted) {
+        SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
         _barcodeController.clear();
         _barcodeFocus.requestFocus();
       }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
+    }
+  }
+
+  Future<void> _openScanner() async {
+    final barcode = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(builder: (_) => const ScannerScreen()),
+    );
+    if (barcode != null && barcode.isNotEmpty) {
+      _barcodeController.text = barcode;
+      _onBarcodeSubmit(barcode);
     }
   }
 
@@ -210,12 +224,17 @@ class _CartScreenState extends State<CartScreen> {
                   child: TextField(
                     controller: _barcodeController,
                     focusNode: _barcodeFocus,
-                    decoration: const InputDecoration(
+                    decoration: InputDecoration(
                       hintText: 'สแกนบาร์โค้ด (Scan Barcode)...',
-                      prefixIcon: Icon(Icons.qr_code_scanner),
-                      border: OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.qr_code_scanner),
+                        onPressed: _openScanner,
+                        tooltip: 'สแกนบาร์โค้ด (Scan)',
+                      ),
+                      border: const OutlineInputBorder(),
                       contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     ),
                     onSubmitted: _onBarcodeSubmit,
                     textInputAction: TextInputAction.done,

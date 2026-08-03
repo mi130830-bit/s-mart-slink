@@ -176,7 +176,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
               items: jobItems, // ✅ Pass items
               details: jobDetails, // ✅ Pass details text summary
               paymentMethod: _paymentMethod, // บอกให้คนขับรู้ว่าลูกค้าจ่ายแบบไหนมาแล้ว
-              price: 0.0, // ขายหน้าร้านแล้ว ไม่ต้องเก็บเงินปลายทางซ้ำ
+              price: _paymentMethod == 'CREDIT' ? total : 0.0, // สินเชื่อต้องเก็บปลายทาง (COD)
             );
 
             await context.read<JobProvider>().createNewJob(newJob);

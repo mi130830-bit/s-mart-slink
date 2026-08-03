@@ -7,6 +7,7 @@ import 'package:s_link/core/services/sound_service.dart';
 import 'package:s_link/core/providers/theme_provider.dart';
 import 'package:s_link/core/services/startup_service.dart';
 import 'package:s_link/features/auth/providers/auth_provider.dart';
+import 'package:s_link/features/pos/services/pos_api_service.dart';
 import 'package:s_link/features/settings/screens/widgets/settings_shared_ui.dart';
 
 /// Section สำหรับการตั้งค่าทั่วไป (General Settings)
@@ -23,6 +24,7 @@ class _ConnectionSettingsSectionState
     extends State<ConnectionSettingsSection> {
   String _promptPayId = '';
   String _posDeviceId = '';
+  String _apiBaseUrl = '';
   bool _loaded = false;
 
   @override
@@ -33,10 +35,12 @@ class _ConnectionSettingsSectionState
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    final baseUrl = await PosApiService().getBaseUrl();
     if (!mounted) return;
     setState(() {
       _promptPayId = prefs.getString('promptpay_id') ?? '';
       _posDeviceId = prefs.getString('pos_device_id') ?? '';
+      _apiBaseUrl = baseUrl ?? '';
       _loaded = true;
     });
   }
@@ -186,6 +190,7 @@ class _ConnectionSettingsSectionState
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
@@ -222,6 +227,8 @@ class _ConnectionSettingsSectionState
                 ),
                 SettingsSharedUI.buildDivider(),
               ],
+
+              
               ListTile(
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 8),

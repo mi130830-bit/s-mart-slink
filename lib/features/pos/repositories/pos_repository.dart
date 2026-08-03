@@ -42,12 +42,9 @@ class PosRepository {
     try {
       debugPrint('🔄 Creating Order via API Tunnel...');
 
-      // ✅ แก้ไข: กำหนด status ตาม paymentMethod
-      // CREDIT → backend จะสร้างรายการหนี้ลูกค้า (ไม่ถือว่าจ่ายแล้ว)
-      // อื่น ๆ (CASH, PROMPTPAY) → COMPLETED (จ่ายแล้ว)
-      final orderStatus = (paymentMethod.toUpperCase() == 'CREDIT')
-          ? 'CREDIT'
-          : 'COMPLETED';
+      // ✅ แก้ไขกลับ: POS Desktop ต้องการ status เป็น COMPLETED เสมอเพื่อให้แสดงในประวัติ
+      // การเป็นหนี้จะดูจาก paymentMethod = 'CREDIT' แทน
+      final orderStatus = 'COMPLETED';
 
       final result = await _api.createOrder({
         'customerId':

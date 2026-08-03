@@ -231,6 +231,17 @@ class Job {
           destLocation = GeoPoint(lat, lng);
         }
       }
+    } else if (row['destinationLat'] != null && row['destinationLng'] != null) {
+      final lat = double.tryParse(row['destinationLat'].toString());
+      final lng = double.tryParse(row['destinationLng'].toString());
+      if (lat != null && lng != null) {
+        destLocation = GeoPoint(lat, lng);
+      }
+    }
+
+    String? proofImg = row['billImageUrl']?.toString();
+    if (proofImg != null && proofImg.trim().isEmpty) {
+      proofImg = null; // Prevent displaying empty image widgets
     }
 
     return Job(
@@ -251,7 +262,7 @@ class Job {
       jobType: row['jobType']?.toString() ?? 'delivery',
       details: row['note']?.toString(),
       destinationLocation: destLocation,
-      proofImage: row['billImageUrl']?.toString(),
+      proofImage: proofImg,
     );
   }
 

@@ -19,6 +19,7 @@ class ShopMenuScreen extends StatefulWidget {
 class _ShopMenuScreenState extends State<ShopMenuScreen> {
   Map<String, dynamic>? _summary;
   bool _loadingSummary = false;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -27,11 +28,16 @@ class _ShopMenuScreenState extends State<ShopMenuScreen> {
   }
 
   Future<void> _loadSummary() async {
-    setState(() => _loadingSummary = true);
+    setState(() {
+      _loadingSummary = true;
+      _errorMessage = null;
+    });
     try {
-      final data = await PosApiService().getDailySummary();
-      if (mounted) setState(() => _summary = data);
-    } catch (_) {
+      // Temporary change: call _sendRequest directly to get the exception message
+      final response = await PosApiService().getDailySummaryRaw();
+      if (mounted) setState(() => _summary = response);
+    } catch (e) {
+      if (mounted) setState(() => _errorMessage = e.toString());
     } finally {
       if (mounted) setState(() => _loadingSummary = false);
     }
@@ -83,9 +89,15 @@ class _ShopMenuScreenState extends State<ShopMenuScreen> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           ))
                         : _summary == null
-                            ? const Text('ยอดวันนี้: ไม่สามารถโหลดได้',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.grey))
+                            ? Padding(
+                                padding: const EdgeInsets.all(8.0),
+                                child: Text(
+                                  _errorMessage ?? 'ยอดวันนี้: ไม่สามารถโหลดได้',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                      color: Colors.redAccent, fontSize: 12),
+                                ),
+                              )
                             : Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [

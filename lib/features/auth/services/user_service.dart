@@ -5,6 +5,7 @@ import 'dart:developer';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:s_link/features/auth/models/user.dart';
 import 'package:s_link/features/auth/models/user_role.dart';
+import 'package:s_link/features/pos/services/pos_api_service.dart';
 
 class UserService {
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
@@ -38,22 +39,26 @@ class UserService {
   // ✅ 1.5 ดึงรายชื่อพนักงานขับรถทั้งหมด (สำหรับหน้า Assign Job)
   Future<List<UserModel>> getDrivers() async {
     try {
-      final snapshot = await _firestore
-          .collection('users')
-          .where('role', isEqualTo: 'driver')
-          // .orderBy('name') // ❌ Disable orderBy to avoid Index issues clearly
-          .get();
+      final response = await PosApiService().getRaw('/employees/drivers');
+      if (response != null && response['drivers'] != null) {
+        final List<dynamic> driversData = response['drivers'];
+        final users = driversData.map((d) {
+          return UserModel(
+            uid: d['id'].toString(),
+            email: '', // Not provided by this endpoint
+            name: d['name'] ?? 'Unknown',
+            role: UserRole.driver,
+          );
+        }).toList();
 
-      final users =
-          snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList();
-
-      // ✅ Sort in Dart instead
-      users.sort((a, b) => a.name.compareTo(b.name));
-
-      log('User Service: Found ${users.length} drivers');
-      return users;
+        // ✅ Sort in Dart
+        users.sort((a, b) => a.name.compareTo(b.name));
+        log('User Service: Found ${users.length} drivers from API');
+        return users;
+      }
+      return [];
     } catch (e, stack) {
-      log('Error getting drivers: $e\n$stack');
+      log('Error getting drivers from API: $e\n$stack');
       return [];
     }
   }
@@ -63,6 +68,7 @@ class UserService {
     try {
       final snapshot = await _firestore.collection('users').get();
       final users = snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList();
+      
       users.sort((a, b) => a.name.compareTo(b.name));
       return users;
     } catch (e, stack) {
@@ -73,26 +79,8 @@ class UserService {
 
   // ✅ 1.6 ดึงรายชื่อพนักงานทั้งหมด (สำหรับทีมส่งของ - Delivery Team)
   Future<List<UserModel>> getDeliveryStaff() async {
-    try {
-      // ดึงหมดเลย ทั้ง Admin, Driver, Requester
-      final snapshot = await _firestore.collection('users').get();
-
-      final users =
-          snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList();
-
-      // Filter: เอาเฉพาะคนที่มี Role ที่น่าจะไปส่งของได้ (เผื่อมี role อื่นๆ ในอนาคต)
-      // แต่ตอนนี้เอาหมดเลยก็ได้ เพื่อความยืดหยุ่น
-      // users.removeWhere((u) => u.role == UserRole.unknown);
-
-      // Sort
-      users.sort((a, b) => a.name.compareTo(b.name));
-
-      log('User Service: Found ${users.length} staff members');
-      return users;
-    } catch (e, stack) {
-      log('Error getting delivery staff: $e\n$stack');
-      return [];
-    }
+    // Return drivers from POS API to ensure MySQL IDs match when assigning jobs
+    return await getDrivers();
   }
 
   void _handlePostRegisterSubscription(UserRole role) {

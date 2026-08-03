@@ -20,15 +20,19 @@ extension PosApiJobExtension on PosApiService {
   // 10. Daily Sales Summary
   Future<Map<String, dynamic>?> getDailySummary() async {
     try {
-      final response = await _sendRequest(
-        method: 'GET',
-        path: '/api/v1/orders/daily-summary',
-      );
-      return response as Map<String, dynamic>?;
+      return await getDailySummaryRaw();
     } catch (e) {
       debugPrint('❌ getDailySummary Error: $e');
       return null;
     }
+  }
+
+  Future<Map<String, dynamic>?> getDailySummaryRaw() async {
+    final response = await _sendRequest(
+      method: 'GET',
+      path: '/api/v1/orders/daily-summary',
+    );
+    return response as Map<String, dynamic>?;
   }
 
   // 9. Pay COD Debt
@@ -102,4 +106,29 @@ extension PosApiJobExtension on PosApiService {
       return null;
     }
   }
+
+  // ✅ [M2] 14. ดึงงานที่ยัง PENDING ทั้งหมดจาก MySQL (สำหรับ Offline Cache)
+  // รองรับ since= เพื่อทำ Delta Sync (โหลดเฉพาะงานใหม่)
+  Future<List<Map<String, dynamic>>> getActiveJobs({String? since}) async {
+    try {
+      final Map<String, String> query = {};
+      if (since != null && since.isNotEmpty) {
+        query['since'] = since;
+      }
+      final response = await _sendRequest(
+        method: 'GET',
+        path: '/api/v1/jobs/active',
+        query: query.isNotEmpty ? query : null,
+      );
+      if (response == null) return [];
+      final decoded = response as Map<String, dynamic>;
+      final data = decoded['data'] as List<dynamic>? ?? [];
+      debugPrint('✅ [API] getActiveJobs: ${data.length} active jobs fetched');
+      return data.cast<Map<String, dynamic>>();
+    } catch (e) {
+      debugPrint('❌ [API] getActiveJobs Error: $e');
+      return [];
+    }
+  }
 }
+

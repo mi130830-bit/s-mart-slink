@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import 'package:s_link/features/jobs/providers/job_provider.dart';
-import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'package:s_link/features/jobs/models/job.dart';
 import 'package:s_link/features/jobs/services/job_export_service.dart';
 import 'job_detail_screen.dart';
@@ -163,20 +162,30 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
 
   @override
   Widget build(BuildContext context) {
-    final jobProvider = Provider.of<JobProvider>(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('รายการงานรายวัน'),
         actions: [
-          // ✅ ปุ่ม Force Sync
-          IconButton(
-            icon: const Icon(Icons.sync),
-            tooltip: 'Force Sync',
-            onPressed: () {
-              final auth = Provider.of<AuthenticationProvider>(context, listen: false);
-              jobProvider.startListeningToJobs(auth.currentUser);
-              SnackbarUtils.showLeft(context, 'กำลังซิงค์ข้อมูลใหม่...');
-            },
+          // [M2] ปุ่ม Force Sync — ดึงงานจาก POS Backend มาเก็บใน Local SQLite
+          Consumer<JobProvider>(
+            builder: (context, jp, _) => jp.isSyncingDown
+                ? const Padding(
+                    padding: EdgeInsets.all(14),
+                    child: SizedBox(
+                      width: 22, height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.cloud_download_outlined),
+                    tooltip: 'โหลดงานจากร้าน (Sync)',
+                    onPressed: () async {
+                      await jp.syncAndRefreshJobs();
+                      if (context.mounted) {
+                        SnackbarUtils.showLeft(context, 'โหลดงานล่าสุดแล้ว!');
+                      }
+                    },
+                  ),
           ),
           IconButton(
             icon: const Icon(Icons.download),
@@ -295,8 +304,17 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
                 return TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildFilteredList(jobProvider.pendingJobs,
-                        isHistory: false),
+                    // [M2] Tab 1: งานกำลังดำเนินการ — อ่านจาก Local SQLite + Pull-to-refresh
+                    RefreshIndicator(
+                      onRefresh: () => jobProvider.syncAndRefreshJobs(),
+                      child: _buildFilteredList(
+                        jobProvider.activeLocalJobs.isNotEmpty
+                            ? jobProvider.activeLocalJobs
+                            : jobProvider.pendingJobs,
+                        isHistory: false,
+                      ),
+                    ),
+                    // Tab 2: งานที่เสร็จแล้ว — อ่านจาก MySQL History
                     _buildFilteredList(jobProvider.completedJobs,
                         isHistory: true),
                   ],

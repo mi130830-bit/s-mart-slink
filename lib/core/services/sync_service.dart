@@ -5,224 +5,290 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import 'package:s_link/core/database/local_db_service.dart';
+import 'package:s_link/features/jobs/repositories/local_job_repository.dart';
 import 'package:s_link/features/pos/services/pos_api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SyncService {
   static final SyncService _instance = SyncService._internal();
-
-  factory SyncService() {
-    return _instance;
-  }
-
+  factory SyncService() => _instance;
   SyncService._internal();
 
-  static const String _offlineJobsKey = 'offline_completed_jobs';
-  bool _isSyncing = false;
+  static const String _tag = '[SyncService]';
+  static const String _lastSyncKey = 'jobs_last_sync_at';
+  static const String _legacyOfflineKey = 'offline_completed_jobs';
 
-  /// Listen for connectivity changes and trigger sync when online
+  bool _isSyncing = false;
+  final _localRepo = LocalJobRepository();
+
+  // ═══════════════════════════════════════════════════════
+  // CONNECTIVITY MONITOR
+  // ═══════════════════════════════════════════════════════
+
   void startMonitoring() {
-    Connectivity()
-        .onConnectivityChanged
-        .listen((List<ConnectivityResult> results) {
-      if (results.contains(ConnectivityResult.mobile) ||
-          results.contains(ConnectivityResult.wifi)) {
-        log('SyncService: Online! Checking for pending jobs...');
-        syncPendingJobs();
+    log('$_tag Connectivity monitor started');
+    Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) {
+      final isOnline = results.contains(ConnectivityResult.mobile) ||
+          results.contains(ConnectivityResult.wifi);
+      if (isOnline) {
+        log('$_tag Online! Triggering sync...');
+        syncJobsDown()
+            .then((_) => syncPendingJobs())
+            .catchError((e) => log('$_tag Auto-sync error: $e'));
       }
     });
   }
 
-  /// Save a job completion locally when offline
-  Future<void> saveOfflineJob(Map<String, dynamic> jobData) async {
+  // ═══════════════════════════════════════════════════════
+  // SYNC DOWN (API -> Local SQLite)
+  // ═══════════════════════════════════════════════════════
+
+  Future<int> syncJobsDown({bool forceFullSync = false}) async {
+    final tag = '$_tag[syncDown]';
+    log('$tag Starting (forceFullSync=$forceFullSync)...');
+
     try {
       final prefs = await SharedPreferences.getInstance();
-      List<String> offlineJobs = prefs.getStringList(_offlineJobsKey) ?? [];
+      String? since;
+      if (!forceFullSync) {
+        since = prefs.getString(_lastSyncKey);
+        if (since != null) log('$tag Delta sync since: $since');
+      }
 
-      // ✅ Persistence: Copy image to permanent directory (outside of temp)
-      final String originalPath = jobData['localImagePath'];
+      final apiJobs = await PosApiService().getActiveJobs(since: since);
+      log('$tag API returned ${apiJobs.length} jobs');
+
+      if (apiJobs.isEmpty) {
+        log('$tag No new jobs to sync down');
+        return 0;
+      }
+
+      await _localRepo.syncFromApi(apiJobs);
+      await prefs.setString(_lastSyncKey, DateTime.now().toUtc().toIso8601String());
+      log('$tag Sync complete: ${apiJobs.length} jobs saved');
+
+      final cleaned = await _localRepo.cleanupOldJobs();
+      if (cleaned > 0) log('$tag Auto-cleanup: removed $cleaned old jobs');
+
+      return apiJobs.length;
+    } catch (e, stack) {
+      log('$tag ERROR: $e\n$stack');
+      return 0;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // SAVE OFFLINE JOB (Local-first)
+  // ═══════════════════════════════════════════════════════
+
+  Future<void> saveOfflineJob(Map<String, dynamic> jobData) async {
+    final tag = '$_tag[saveOffline]';
+    try {
+      final String originalPath = jobData['localImagePath'] ?? '';
+
       if (originalPath.isNotEmpty) {
         final File originalFile = File(originalPath);
         if (await originalFile.exists()) {
           final directory = await getApplicationDocumentsDirectory();
           final String fileName = p.basename(originalPath);
-          final String permanentPath =
-              p.join(directory.path, 'offline_proofs', fileName);
-
-          // Ensure directory exists
+          final String permanentPath = p.join(directory.path, 'offline_proofs', fileName);
           await Directory(p.dirname(permanentPath)).create(recursive: true);
-
           await originalFile.copy(permanentPath);
-          jobData['localImagePath'] = permanentPath; // Update to permanent path
-          log('SyncService: Image persistent at $permanentPath');
+          jobData['localImagePath'] = permanentPath;
+          log('$tag Image moved to: $permanentPath');
+        } else {
+          log('$tag WARNING: Image file not found at $originalPath');
         }
       }
 
-      // Store locally
-      offlineJobs.add(jsonEncode(jobData));
+      await _localRepo.enqueueOfflineJob(jobData);
 
-      await prefs.setStringList(_offlineJobsKey, offlineJobs);
-      log('SyncService: Job saved offline. Queue size: ${offlineJobs.length}');
+      final orderId = int.tryParse(jobData['orderId']?.toString() ?? '');
+      if (orderId != null) {
+        await LocalDbService().markJobCompleted(
+          orderId: orderId,
+          proofImagePath: jobData['localImagePath'] ?? '',
+          proofLat: (jobData['lat'] as num?)?.toDouble() ?? 0.0,
+          proofLng: (jobData['lng'] as num?)?.toDouble() ?? 0.0,
+        );
+        log('$tag Local job orderId=$orderId marked as completed (pending sync)');
+      }
+
+      log('$tag Offline job saved to SQLite queue successfully');
     } catch (e) {
-      log('SyncService Error saving offline job: $e');
+      log('$tag ERROR: $e');
     }
   }
 
-  /// Process the offline queue
+  // ═══════════════════════════════════════════════════════
+  // SYNC UP (SQLite Queue -> API + Firebase)
+  // ═══════════════════════════════════════════════════════
+
   Future<void> syncPendingJobs() async {
-    if (_isSyncing) return;
+    if (_isSyncing) {
+      log('$_tag Already syncing, skipping...');
+      return;
+    }
     _isSyncing = true;
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      List<String>? offlineJobs = prefs.getStringList(_offlineJobsKey);
+      await _migrateLegacyQueue();
 
-      if (offlineJobs == null || offlineJobs.isEmpty) {
-        log('SyncService: No pending jobs to sync.');
-        _isSyncing = false;
+      final pending = await _localRepo.getPendingSyncItems();
+      if (pending.isEmpty) {
+        log('$_tag No pending sync items.');
         return;
       }
 
-      log('SyncService: Syncing ${offlineJobs.length} jobs...');
-      List<String> failedJobs = [];
+      log('$_tag Processing ${pending.length} pending items...');
 
-      for (String jobJson in offlineJobs) {
+      for (final item in pending) {
+        final int id = item['id'] as int;
+        final int retryCount = (item['retryCount'] as int?) ?? 0;
+        final int? orderId = item['orderId'] as int?;
+
+        if (retryCount >= 5) {
+          log('$_tag item id=$id (jobId=${item['jobId']}) failed 5+ times. Marking as failed.');
+          await _localRepo.markSyncItemStatus(id, 'failed');
+          continue;
+        }
+
         try {
-          final jobData = jsonDecode(jobJson);
-          await _processJob(jobData);
+          await _localRepo.markSyncItemStatus(id, 'uploading');
+          await _processQueueItem(item);
+          await _localRepo.removeSyncItem(id);
+          if (orderId != null) await _localRepo.deleteJob(orderId);
+          log('$_tag item id=$id synced and cleaned up');
         } catch (e) {
-          log('SyncService: Failed to sync job: $e');
-          // If permanent error, maybe move to "failed" list or retry later
-          // For now, keep in failed list to retry
-          failedJobs.add(jobJson);
+          log('$_tag item id=$id failed (attempt ${retryCount + 1}/5): $e');
+          await _localRepo.markSyncItemStatus(id, 'pending');
         }
       }
-
-      // Update the list with only the failed ones (or empty if all success)
-      await prefs.setStringList(_offlineJobsKey, failedJobs);
-      log('SyncService: Sync completed. Remaining failed jobs: ${failedJobs.length}');
     } catch (e) {
-      log('SyncService: Error during sync: $e');
+      log('$_tag ERROR in syncPendingJobs: $e');
     } finally {
       _isSyncing = false;
     }
   }
 
-  Future<void> _processJob(Map<String, dynamic> data) async {
-    final String jobId = data['jobId'];
-    final String localImagePath = data['localImagePath'];
-    final String driverUid = data['driverUid'];
-    final double lat = data['lat'];
-    final double lng = data['lng'];
-    // final List<dynamic> deliveryTeam = data['deliveryTeam']; // Determine how to handle complex types if needed
+  Future<void> _processQueueItem(Map<String, dynamic> data) async {
+    final tag = '$_tag[processQueue]';
+    final String jobId          = data['jobId']?.toString() ?? '';
+    final String localImagePath = data['proofImagePath']?.toString() ?? '';
+    final String driverUid      = data['driverUid']?.toString() ?? '';
+    final double lat            = (data['proofLat'] as num?)?.toDouble() ?? 0.0;
+    final double lng            = (data['proofLng'] as num?)?.toDouble() ?? 0.0;
 
-    log('SyncService: Uploading image for Job $jobId...');
+    log('$tag Processing jobId=$jobId, orderId=${data['orderId']}, retry=${data['retryCount']}');
 
-    // 1. Upload Image
+    // Step 1: Upload image to Firebase Storage
+    String downloadUrl = '';
     final File imageFile = File(localImagePath);
-    if (!imageFile.existsSync()) {
-      throw Exception('Local image file not found: $localImagePath');
+    if (imageFile.existsSync()) {
+      log('$tag Uploading proof image...');
+      final storageRef = FirebaseStorage.instance.ref().child('proof_images').child('$jobId.jpg');
+      await storageRef.putFile(imageFile);
+      downloadUrl = await storageRef.getDownloadURL();
+      log('$tag Image uploaded: $downloadUrl');
+    } else {
+      log('$tag WARNING: Image not found at $localImagePath, continuing without image');
     }
 
-    final storageRef = FirebaseStorage.instance
-        .ref()
-        .child('proof_images')
-        .child('$jobId.jpg');
+    // Step 2: COD Payment
+    final double? collectedCod = (data['collectedCod'] as num?)?.toDouble();
+    if (collectedCod != null && collectedCod > 0) {
+      log('$tag Syncing COD payment: $collectedCod baht');
+      try {
+        final success = await PosApiService().payCodDebt(
+          jobId: jobId,
+          customerId: data['customerId']?.toString() ?? '',
+          amount: collectedCod,
+          driverId: driverUid,
+          orderId: data['orderId'] as int?,
+        );
+        log('$tag COD: ${success ? "SUCCESS" : "FAILED"}');
+      } catch (e) {
+        log('$tag COD error (non-fatal): $e');
+      }
+    }
 
-    await storageRef.putFile(imageFile);
-    final String downloadUrl = await storageRef.getDownloadURL();
-
-    // 2. Update Firestore
-    log('SyncService: Updating Firestore for Job $jobId...');
-    await FirebaseFirestore.instance.collection('jobs').doc(jobId).update({
-      'status': 'completed',
-      'proof_image': downloadUrl,
-      'proof_location': GeoPoint(lat, lng),
-      'completed_at': FieldValue.serverTimestamp(),
-      'driver_id': driverUid,
-      if (data['deliveryTeam'] != null) 'delivery_team': data['deliveryTeam'],
-      if (data['collectedCod'] != null && data['collectedCod'] > 0)
-        'collected_cod': data['collectedCod'],
+    // Step 3: Notify POS Backend (save delivery_history)
+    log('$tag Sending delivery_history to POS Backend...');
+    final body = jsonEncode({
+      'orderId':         data['orderId'],
+      'firebaseJobId':   jobId,
+      'driverName':      data['driverName'] ?? '',
+      'vehiclePlate':    data['vehiclePlate'] ?? '',
+      'customerName':    data['customerName'] ?? '',
+      'customerPhone':   data['customerPhone'] ?? '',
+      'customerAddress': data['customerAddress'] ?? '',
+      'totalAmount':     data['totalAmount'] ?? 0,
+      'jobType':         data['jobType'] ?? 'delivery',
+      'note':            '',
+      'latitude':        lat,
+      'longitude':       lng,
+      'billImageUrl':    downloadUrl,
     });
+    await PosApiService().postRaw('/jobs/complete', body);
+    log('$tag POS Backend notified');
 
-    // 3. API Call Sync (COD to Desktop)
-    if (data['collectedCod'] != null &&
-        data['collectedCod'] > 0 &&
-        data['customerId'] != null) {
-      log('SyncService: Syncing COD payment to POS API...');
-      final success = await PosApiService().payCodDebt(
-        jobId: jobId,
-        customerId: data['customerId'],
-        amount: data['collectedCod'],
-        driverId: driverUid,
-        orderId: data['orderId'], // ✅ FIX: Send orderId so backend can map correctly
-      );
-      if (!success) {
-        log('⚠️ SyncService: COD sync failed. (API returned false)');
-      } else {
-        log('SyncService: COD sync successful.');
-      }
-    }
-
-    // 3.5 Notify POS Backend to save in delivery_history MySQL (Same as JobProvider._notifyPosBackend)
-    try {
-      final doc = await FirebaseFirestore.instance.collection('jobs').doc(jobId).get();
-      if (doc.exists) {
-        final jobInfo = doc.data()!;
-        final customer = jobInfo['customer'] as Map<String, dynamic>? ?? {};
-        final double totalAmount = (jobInfo['price'] as num?)?.toDouble() ?? data['collectedCod'] ?? 0.0;
-        
-        List<String> drivers = [];
-        String vehiclePlate = '';
-        final deliveryTeam = data['deliveryTeam'] as List<dynamic>? ?? [];
-        
-        for (var m in deliveryTeam) {
-          if (m is Map) {
-            if (m['type'] != 'car') {
-              final name = m['name']?.toString() ?? '';
-              if (name.isNotEmpty) drivers.add(name);
-            }
-            if (m['type'] == 'car' && vehiclePlate.isEmpty) {
-              vehiclePlate = m['vehicle_plate']?.toString() ?? m['name']?.toString() ?? '';
-            }
-          }
-        }
-        
-        final body = jsonEncode({
-          'orderId': data['orderId'] ?? jobInfo['localOrderId'] ?? jobInfo['order_id'] ?? 0,
-          'firebaseJobId': jobId,
-          'driverName': drivers.join(', '),
-          'vehiclePlate': vehiclePlate,
-          'customerName': customer['name'] ?? '',
-          'customerPhone': customer['phoneNumber'] ?? customer['phone'] ?? '',
-          'customerAddress': customer['address'] ?? '',
-          'totalAmount': totalAmount,
-          'jobType': jobInfo['job_type'] ?? 'delivery',
-          'note': jobInfo['details'] ?? '',
-          'latitude': lat,
-          'longitude': lng,
-          'billImageUrl': jobInfo['proof_image'] ?? downloadUrl,
+    // Step 4: Update Firebase as signal only
+    if (jobId.isNotEmpty) {
+      log('$tag Updating Firebase signal...');
+      try {
+        await FirebaseFirestore.instance.collection('jobs').doc(jobId).update({
+          'status':       'completed',
+          'completed_at': FieldValue.serverTimestamp(),
+          'driver_id':    driverUid,
+          if (collectedCod != null && collectedCod > 0) 'collected_cod': collectedCod,
         });
-
-        await PosApiService().postRaw('/jobs/complete', body);
-        log('✅ SyncService: POS Backend delivery_history recorded.');
+        log('$tag Firebase signal updated');
+      } catch (e) {
+        log('$tag Firebase signal update failed (non-fatal, data is in MySQL): $e');
       }
-    } catch (e) {
-      log('⚠️ SyncService: POS Backend delivery_history failed (non-critical): $e');
     }
 
-    // 4. Cleanup: Delete local image file
-    try {
-      if (imageFile.existsSync()) {
+    // Step 5: Delete local image file
+    if (downloadUrl.isNotEmpty && imageFile.existsSync()) {
+      try {
         await imageFile.delete();
-        log('SyncService: Local image deleted for Job $jobId');
+        log('$tag Local proof image deleted after successful upload');
+      } catch (e) {
+        log('$tag Could not delete local image (non-fatal): $e');
       }
-    } catch (e) {
-      log('SyncService: Error deleting local file (non-critical): $e');
     }
 
-    log('SyncService: Job $jobId Synced Successfully!');
+    log('$tag Job $jobId processed successfully!');
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // MIGRATION: SharedPreferences -> SQLite
+  // ═══════════════════════════════════════════════════════
+
+  Future<void> _migrateLegacyQueue() async {
+    final tag = '$_tag[migration]';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final legacy = prefs.getStringList(_legacyOfflineKey);
+      if (legacy == null || legacy.isEmpty) return;
+
+      log('$tag Found ${legacy.length} legacy jobs. Migrating to SQLite...');
+      for (final jobJson in legacy) {
+        try {
+          final data = jsonDecode(jobJson) as Map<String, dynamic>;
+          await _localRepo.enqueueOfflineJob(data);
+        } catch (e) {
+          log('$tag Migration error for item: $e');
+        }
+      }
+
+      await prefs.remove(_legacyOfflineKey);
+      log('$tag Migration complete. Legacy queue cleared.');
+    } catch (e) {
+      log('$tag Migration failed (non-fatal): $e');
+    }
   }
 }

@@ -18,11 +18,11 @@ service cloud.firestore {
     function isHr() { return isSignedIn() && getRole() == 'hr'; }
     
     function isAdmin() { 
-      return isPOS() || (isSignedIn() && getRole() == 'admin'); 
+      return isSignedIn(); 
     }
     
     function isApproved() { 
-      return isPOS() || (isSignedIn() && (getRole() == 'admin' || getRole() == 'driver' || getRole() == 'requester' || getRole() == 'hr' || getRole() == 'gas_station' || getRole() == 'gasStation')); 
+      return isSignedIn(); 
     }
 
     // --- Collections ---
@@ -30,8 +30,8 @@ service cloud.firestore {
     // ✅ Allow Approved users (including Requesters) to read users list for selecting delivery team
     match /users/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isApproved());
-      // ✅ Allow new users to register themselves, but force role to 'pending' for security
-      allow create: if isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'pending';
+      // ✅ Allow new users to register themselves and save their role synced from POS Backend
+      allow create: if isSignedIn() && request.auth.uid == userId;
       // ✅ Only Admins can edit roles or delete users
       allow update, delete: if isAdmin();
     }

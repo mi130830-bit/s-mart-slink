@@ -6,10 +6,7 @@ import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'package:s_link/features/auth/screens/login_screen.dart';
 
 // Import Dashboard ต่างๆ
-import 'package:s_link/features/dashboard/screens/admin_dashboard.dart';
-import 'package:s_link/features/dashboard/screens/employee_dashboard.dart';
-// Removed requester_view and driver_view
-import 'package:s_link/features/hr/screens/hr_dashboard.dart';
+import 'package:s_link/features/dashboard/screens/main_dashboard.dart';
 import 'package:s_link/features/hr/screens/gas_station_view.dart';
 
 // Import Service & Shop Menu
@@ -49,18 +46,14 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final roleName = user.role.name.toLowerCase();
 
-    if (roleName == 'admin') {
-      return const AdminDashboard();
-    } else if (roleName == 'hr') {
-      return const HrDashboard();
-    } else if (roleName == 'gas_station' || roleName == 'gasstation') {
+    if (roleName == 'gas_station' || roleName == 'gasstation') {
       return const GasStationView();
     } else if (roleName == 'requester') {
       return const PosNavigationWrapper(
-        child: EmployeeDashboard(isRequester: true),
+        child: MainDashboard(),
       );
-    } else if (roleName == 'driver') {
-      return const EmployeeDashboard(isRequester: false);
+    } else if (roleName == 'admin' || roleName == 'hr' || roleName == 'driver') {
+      return const MainDashboard();
     } else if (roleName == 'pending') {
       return const Scaffold(
         body: Center(

@@ -47,7 +47,7 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
     final method = widget.job.paymentMethod?.trim().toLowerCase();
     return widget.job.price != null &&
         widget.job.price! > 0 &&
-        (method == null || method.isEmpty || method == 'credit');
+        (method == null || method.isEmpty || method == 'credit' || method == 'cod');
   }
 
   @override

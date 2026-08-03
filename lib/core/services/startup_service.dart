@@ -13,6 +13,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // [NEW]
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart';
 
 import '../../firebase_options.dart';
 import '../config/app_constants.dart';
@@ -99,7 +101,17 @@ class StartupService {
   static Future<void> initializeApp() async {
     WidgetsFlutterBinding.ensureInitialized();
 
-    // 1. Locale
+    // 1. Desktop SQLite Init (ถ้าเป็น Windows/Linux/Mac)
+    try {
+      if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        sqfliteFfiInit();
+        databaseFactory = databaseFactoryFfi;
+      }
+    } catch (e) {
+      log('⚠️ SQLite FFI Init Error: $e');
+    }
+
+    // 1.5 Locale
     try {
       await initializeDateFormatting('th', null);
     } catch (e) {

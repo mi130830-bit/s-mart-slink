@@ -101,6 +101,18 @@ class AttendanceService {
     return null;
   }
 
+  Stream<AttendanceLog?> todayLogStream(String userId) {
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final docId = '${userId}_$today';
+
+    return _firestore.collection(_collection).doc(docId).snapshots().map((doc) {
+      if (doc.exists && doc.data() != null) {
+        return AttendanceLog.fromJson(doc.data()!, doc.id);
+      }
+      return null;
+    });
+  }
+
   Future<void> checkIn(AttendanceLog logEntry) async {
     final docId = '${logEntry.userId}_${logEntry.date}';
     await _firestore.collection(_collection).doc(docId).set(logEntry.toJson());

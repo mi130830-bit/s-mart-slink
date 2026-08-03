@@ -1,84 +1,110 @@
-// ไฟล์: lib/providers/auth_provider.dart
-
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import 'dart:developer';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // Import Services & Models
 import 'package:s_link/features/auth/services/auth_service.dart';
 import 'package:s_link/features/auth/services/user_service.dart';
-import 'package:s_link/features/pos/services/pos_api_service.dart';
-import 'package:s_link/core/services/notification_service.dart';
 import 'package:s_link/features/auth/models/user.dart';
+import 'package:s_link/features/auth/models/user_role.dart';
 
 class AuthenticationProvider with ChangeNotifier {
   final AuthService _authService;
   final UserService _userService;
 
-  User? _firebaseUser; // Firebase User (จาก FirebaseAuth)
+  String? _jwtToken;
   UserModel? _currentUser; // Custom UserModel (จาก Firestore)
   bool _isLoading = false;
 
   // Getter
-  User? get firebaseUser => _firebaseUser;
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
+  String? get jwtToken => _jwtToken;
 
-  // ตรวจสอบว่าล็อกอินสมบูรณ์หรือไม่ (ต้องมีทั้ง Firebase User และข้อมูลใน Firestore)
-  bool get isAuthenticated => _firebaseUser != null && _currentUser != null;
+  // ตรวจสอบว่าล็อกอินสมบูรณ์หรือไม่ (มี JWT token + currentUser)
+  bool get isAuthenticated => _currentUser != null;
 
   AuthenticationProvider(this._authService, this._userService) {
-    // 1. เริ่มฟังสถานะ Auth ทันที (Login/Logout)
-    _authService.userStream.listen(_onAuthStateChanged);
-
-    // 2. เริ่มฟังสถานะ ID Token Change เพื่อจัดการการต่ออายุอัตโนมัติ (Role Update)
-    FirebaseAuth.instance.idTokenChanges().listen(_onIdTokenChanged);
+    _initializeAuth();
   }
 
-  // ----------------------------------------------------
-  // Core Logic 1: จัดการการเปลี่ยนแปลงสถานะ Auth (Login/Logout)
-  // ----------------------------------------------------
-  Future<void> _onAuthStateChanged(User? user) async {
+  Future<void> _initializeAuth() async {
     _isLoading = true;
     notifyListeners();
 
-    _firebaseUser = user;
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('jwt_token');
 
-    if (user == null) {
-      // กรณี Logout หรือยังไม่ล็อกอิน
-      _currentUser = null;
-      log('Auth State: User is logged out.');
-    } else {
-      // กรณี Login สำเร็จ -> ไปดึงข้อมูล User Profile
-      log('Auth State: Firebase User logged in (${user.uid}).');
-
+    if (token != null && token.isNotEmpty) {
+      log('Auth State: JWT Token found, user is considered logged in.');
+      _jwtToken = token;
+      // Decode JWT payload to restore _currentUser without re-login
       try {
-        // ✅ บังคับ Refresh Token ทันทีเมื่อ Login เพื่อให้ได้ Custom Claims (Role) ล่าสุด
-        await user.getIdToken(true);
-        log('Auth State: Token force refreshed. Custom Claims updated.');
-
-        // ดึงข้อมูล User Profile จาก Firestore
-        _currentUser = await _userService.getUserById(user.uid);
-
-        // ✅ Sync API URL from Cloud for all roles (Lazy-friendly!)
-        await PosApiService().syncBaseUrlFromCloud();
-
-        if (_currentUser == null) {
-          // ป้องกันการเข้าถึงด้วยบัญชีที่ไม่มี User Profile ใน Firestore
-          log('Warning: No user profile found for ${user.uid}. Signing out...');
-          await _authService.signOut();
-        } else {
-          log('Auth State: Profile loaded for ${_currentUser!.name} (Role: ${_currentUser!.role.name})');
-
-          // ✅ บันทึก FCM Token เพื่อรับ Notifications
-          await NotificationService.registerFCMToken(user.uid);
-
-          // ✅ Topic Subscription handled by UserService automatically
-          // Note: Previously checked role here, but moved to centralized logic.
+        final parts = token.split('.');
+        if (parts.length == 3) {
+          final payload = jsonDecode(
+            utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))
+          );
+          // Import UserModel + UserRole to reconstruct
+          // We'll just mark as logged-in with a minimal user from token
+          _currentUser = UserModel(
+            uid: payload['id']?.toString() ?? '0',
+            email: payload['username']?.toString() ?? '',
+            name: payload['employee_name']?.toString() ?? payload['username']?.toString() ?? 'Unknown',
+            role: _mapRole(payload['role']?.toString() ?? 'CASHIER'),
+          );
+          log('Auth State: Restored user from JWT: ${_currentUser!.name}');
         }
       } catch (e) {
-        log('Error fetching user profile or refreshing token: $e');
+        log('Auth State: Failed to decode JWT: $e');
+        // Token invalid — clear it
+        await prefs.remove('jwt_token');
         _currentUser = null;
+      }
+    } else {
+      log('Auth State: User is logged out.');
+    }
+
+    // 🔥 Ensure Firebase is also logged in
+    if (_currentUser != null && FirebaseAuth.instance.currentUser == null) {
+      try {
+        final offPass = prefs.getString('offline_password');
+        if (offPass != null) {
+          String firebasePassword = offPass;
+          if (firebasePassword.length < 6) {
+            firebasePassword = firebasePassword.padRight(6, '0');
+          }
+          await FirebaseAuth.instance.signInWithEmailAndPassword(
+            email: 'user${_currentUser!.id}@s-link.local',
+            password: firebasePassword,
+          );
+          log('Firebase Auto-Login successful on startup.');
+        }
+      } on FirebaseAuthException catch (e) {
+        if (e.code == 'user-not-found' || e.code == 'invalid-credential' || e.code == 'wrong-password') {
+          try {
+            final offPass = prefs.getString('offline_password');
+            if (offPass != null) {
+              String firebasePassword = offPass;
+              if (firebasePassword.length < 6) {
+                firebasePassword = firebasePassword.padRight(6, '0');
+              }
+              await FirebaseAuth.instance.createUserWithEmailAndPassword(
+                email: 'user${_currentUser!.id}@s-link.local',
+                password: firebasePassword,
+              );
+              log('Firebase user auto-created and logged in on startup.');
+            }
+          } catch (createErr) {
+            log('⚠️ Firebase auto-create failed on startup: $createErr');
+          }
+        } else {
+          log('⚠️ Firebase Auto-Login failed on startup: $e');
+        }
+      } catch (e) {
+        log('⚠️ Firebase Auto-Login failed on startup: $e');
       }
     }
 
@@ -87,43 +113,22 @@ class AuthenticationProvider with ChangeNotifier {
   }
 
   // ----------------------------------------------------
-  // Core Logic 2: จัดการเมื่อ ID Token ถูกต่ออายุอัตโนมัติ
-  // ----------------------------------------------------
-  Future<void> _onIdTokenChanged(User? user) async {
-    if (user != null && _firebaseUser != null && _currentUser != null) {
-      final idTokenResult = await user.getIdTokenResult(false);
-      final tokenRole = idTokenResult.claims?['role'];
-
-      if (tokenRole == null ||
-          tokenRole != _currentUser!.role.name.toLowerCase()) {
-        log('Token Refresh Detected: Re-fetching user profile to ensure latest role/claims.');
-
-        _isLoading = true;
-        notifyListeners();
-
-        try {
-          _currentUser = await _userService.getUserById(user.uid);
-          log('Token Refresh: Profile updated (New Role: ${_currentUser?.role.name}).');
-        } catch (e) {
-          log('Error re-fetching profile during Token Refresh: $e');
-        } finally {
-          _isLoading = false;
-          notifyListeners();
-        }
-      }
-    }
-  }
-
-  // ----------------------------------------------------
   // UI Actions
   // ----------------------------------------------------
 
-  Future<void> login(String email, String password) async {
+  Future<void> login(String username, String password) async {
     try {
       _isLoading = true;
       notifyListeners();
 
-      await _authService.signInWithEmail(email, password);
+      _currentUser = await _authService.login(username, password);
+      if (_currentUser != null) {
+          log('Auth State: Profile loaded for ${_currentUser!.name} (Role: ${_currentUser!.role.name})');
+          // API URL is configured locally — no longer synced from Firebase
+      }
+      
+      _isLoading = false;
+      notifyListeners();
     } catch (e) {
       _isLoading = false;
       notifyListeners();
@@ -137,14 +142,12 @@ class AuthenticationProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      // ✅ ลบ FCM Token ก่อน Logout
-      if (_firebaseUser != null) {
-        await NotificationService.removeFCMToken(_firebaseUser!.uid);
-        // Unsubscribe จาก topics ทั้งหมดผ่าน UserService (single source of truth)
-        _userService.unsubscribeAllTopics();
-      }
+      _userService.unsubscribeAllTopics();
 
-      await _authService.signOut();
+      await _authService.logout();
+      _currentUser = null;
+      _isLoading = false;
+      notifyListeners();
     } catch (e) {
       log('Logout Error: $e');
       _isLoading = false;
@@ -154,9 +157,9 @@ class AuthenticationProvider with ChangeNotifier {
 
   // ✅ ดึงข้อมูล User ใหม่จาก Firestore (ใช้หลัง update ชื่อ/role)
   Future<void> refreshCurrentUser() async {
-    if (_firebaseUser == null) return;
+    if (_currentUser == null) return;
     try {
-      _currentUser = await _userService.getUserById(_firebaseUser!.uid);
+      _currentUser = await _userService.getUserById(_currentUser!.uid);
       notifyListeners();
     } catch (e) {
       log('Error refreshing user: $e');
@@ -186,5 +189,19 @@ class AuthenticationProvider with ChangeNotifier {
   // ✅ [เพิ่มใหม่] ตรวจสอบสถานะรอการอนุมัติ
   bool get isUserPending {
     return _currentUser?.role.name.toLowerCase() == 'pending';
+  }
+
+  // ----------------------------------------------------
+  // Private Helpers
+  // ----------------------------------------------------
+  UserRole _mapRole(String roleStr) {
+    switch (roleStr.toUpperCase()) {
+      case 'ADMIN': return UserRole.admin;
+      case 'DRIVER': return UserRole.driver;
+      case 'HR': return UserRole.hr;
+      case 'GAS_STATION': return UserRole.gasStation;
+      case 'CASHIER':
+      default: return UserRole.requester;
+    }
   }
 }

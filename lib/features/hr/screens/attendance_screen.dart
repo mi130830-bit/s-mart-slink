@@ -33,13 +33,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _timeString = _formatDateTime(DateTime.now());
     _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) => _getTime());
 
-    // ฟัง AuthProvider ก่อน — ถ้า Auth ยังโหลดอยู่ (currentUser == null)
-    // รอให้ Auth เสร็จแล้วค่อยโหลด log อีกรอบ
+    // Safety fallback: ป้องกันกรณีหมุนค้างนานเกิน 10 วินาที ให้ปลดหมุนและแจ้งเตือนทันที
+    Timer(const Duration(seconds: 10), () {
+      if (mounted && _isLoading) {
+        setState(() => _isLoading = false);
+      }
+    });
+
+    // ฟัง AuthProvider ก่อน — ถ้า Auth ยังโหลดอยู่ ให้รอผ่าน listener
+    // ถ้า Auth โหลดเสร็จแล้ว ให้เรียก _loadTodayLog() ทันที (ไม่ค้างรอถ้า currentUser == null)
     Future.microtask(() {
       if (!mounted) return;
       final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
-      if (authProvider.isLoading || authProvider.currentUser == null) {
-        // รอ auth พร้อมผ่าน listener
+      if (authProvider.isLoading) {
         authProvider.addListener(_onAuthReady);
       } else {
         _loadTodayLog();
@@ -67,26 +73,30 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return DateFormat('HH:mm:ss').format(dt);
   }
 
+  StreamSubscription<AttendanceLog?>? _logSub;
+
   Future<void> _loadTodayLog() async {
     if (!mounted) return;
     final user = Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
     if (user != null) {
-      try {
-        final log = await _service.getTodayLog(user.id)
-            .timeout(const Duration(seconds: 15));
-        if (mounted) {
-          setState(() {
-            _todayLog = log;
-            _isLoading = false;
-          });
+      _logSub?.cancel();
+      _logSub = _service.todayLogStream(user.id).listen(
+        (logData) {
+          if (mounted) {
+            setState(() {
+              _todayLog = logData;
+              _isLoading = false;
+            });
+          }
+        },
+        onError: (e) {
+          log('AttendanceScreen: Error loading today log stream: $e');
+          if (mounted) {
+            setState(() => _isLoading = false);
+            SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาดในการดึงข้อมูล: ${e.toString()}', isError: true);
+          }
         }
-      } catch (e) {
-        log('AttendanceScreen: Error loading today log: $e');
-        if (mounted) {
-          setState(() => _isLoading = false);
-          SnackbarUtils.showLeft(context, 'โหลดข้อมูลไม่สำเร็จ: ${e.toString().contains('TimeoutException') ? 'เชื่อมต่อช้า กรุณาลองใหม่' : e.toString()}', isError: true);
-        }
-      }
+      );
     } else {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -221,6 +231,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _logSub?.cancel();
     // ล้าง listener กัน memory leak ถ้า widget ถูก dispose ก่อน auth เสร็จ
     try {
       Provider.of<AuthenticationProvider>(context, listen: false)
@@ -234,14 +245,27 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('ลงเวลาเข้างาน'),
-        actions: widget.showLogoutButton 
-          ? [
-              IconButton(
-                icon: const Icon(Icons.logout),
-                onPressed: () => context.read<AuthenticationProvider>().logout(),
-              )
-            ]
-          : null,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            tooltip: 'ซิงค์ข้อมูลล่าสุด',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('กำลังดึงข้อมูลล่าสุด...'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+              _loadTodayLog();
+            },
+          ),
+          if (widget.showLogoutButton)
+            IconButton(
+              icon: const Icon(Icons.logout),
+              tooltip: 'ออกจากระบบ',
+              onPressed: () => context.read<AuthenticationProvider>().logout(),
+            ),
+        ],
       ),
       body: _isLoading 
         ? const Center(child: CircularProgressIndicator())

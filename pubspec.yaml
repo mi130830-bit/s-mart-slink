@@ -1,8 +1,7 @@
 name: s_link
 description: A new Flutter project.
 publish_to: 'none'
-version: 3.4.3+86
-
+version: 3.4.14+97
 environment:
   sdk: '>=3.0.0 <4.0.0'
 
@@ -38,17 +37,24 @@ dependencies:
   pdf: ^3.11.3
   printing: ^5.14.2
   excel: ^4.0.6
-  path_provider: ^2.1.5
   share_plus: ^12.0.1
   flutter_native_splash: ^2.4.4
   cached_network_image: ^3.4.1
   path: ^1.9.0
+  sqflite: ^2.4.2   # [M2] Local SQLite database for offline job caching
+  sqflite_common_ffi: ^2.4.0+3
+  isar: ^3.1.0+1
+  isar_flutter_libs: ^3.1.0+1
+  path_provider: ^2.1.6
+  uuid: ^4.6.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.14.4
+  isar_generator: ^3.1.0+1
+  build_runner: ^2.4.13
 
 flutter_launcher_icons:
   android: "ic_launcher"

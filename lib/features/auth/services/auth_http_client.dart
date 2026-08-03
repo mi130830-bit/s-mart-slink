@@ -1,8 +1,8 @@
 import 'package:http/http.dart' as http;
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
 
-/// Interceptor สำหรับแนบ Firebase ID Token ไปกับ Header (Authorization: Bearer [token]) โดยอัตโนมัติ
+/// Interceptor สำหรับแนบ Custom JWT Token ไปกับ Header (Authorization: Bearer [token]) โดยอัตโนมัติ
 class AuthHttpClient extends http.BaseClient {
   final http.Client _inner;
 
@@ -11,18 +11,14 @@ class AuthHttpClient extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        // ดึง Token ปัจจุบัน (ถ้าหมดอายุ Firebase จะ Refresh ให้อัตโนมัติโดยเบื้องหลัง)
-        final token = await user.getIdToken();
-        if (token != null) {
-          debugPrint('🔑 AuthHttpClient: Token obtained, length: ${token.length}');
-          request.headers['Authorization'] = 'Bearer $token';
-        } else {
-          debugPrint('❌ AuthHttpClient: Token is null!');
-        }
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('jwt_token');
+      
+      if (token != null && token.isNotEmpty) {
+        debugPrint('🔑 AuthHttpClient: Token obtained, length: ${token.length}');
+        request.headers['Authorization'] = 'Bearer $token';
       } else {
-        debugPrint('❌ AuthHttpClient: User is null!');
+        debugPrint('❌ AuthHttpClient: Token is null or empty!');
       }
     } catch (e) {
       debugPrint('⚠️ AuthHttpClient Error fetching token: $e');
