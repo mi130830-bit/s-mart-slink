@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:s_link/features/pos/services/promptpay_helper.dart';
 import 'package:s_link/features/pos/services/pos_api_service.dart';
 import 'package:provider/provider.dart';
-import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'package:s_link/features/jobs/providers/job_provider.dart';
 import 'package:s_link/features/jobs/models/job.dart';
 
@@ -23,11 +22,12 @@ class _PaymentConfig {
   });
 
   // Smart Fallback: เป็น Static ถ้าระบุโหมด static มีรูป หรือโหมด dynamic แต่ไม่มี ID แล้วมีรูปแทน
-  bool get isStatic => (qrMode == 'static' && staticQrImage != null) ||
+  bool get isStatic =>
+      (qrMode == 'static' && staticQrImage != null) ||
       (qrMode == 'dynamic' && promptPayId.isEmpty && staticQrImage != null);
 
   bool get hasDynamic => promptPayId.isNotEmpty;
-  
+
   bool get isNativeDynamic => qrMode == 'dynamic' && promptPayId.isNotEmpty;
 }
 
@@ -63,6 +63,8 @@ class _DriverQrScreenState extends State<DriverQrScreen>
 
   // ถ้า Admin ตั้ง Static แต่ Driver อยากสลับ Dynamic (ล็อคยอด) ชั่วคราว
   bool _forceDynamic = false;
+  String? _selectedJobId;
+  double? _customQrAmount;
 
   // Animation QR pulse
   late AnimationController _pulseController;
@@ -126,7 +128,8 @@ class _DriverQrScreenState extends State<DriverQrScreen>
         if (!config.isStatic && !config.hasDynamic) {
           setState(() {
             _isLoading = false;
-            _error = 'ตั้งค่าการรับเงินไม่สมบูรณ์\nกรุณาระบุ PromptPay ID หรือ อัปโหลดรูป QR ใน POS Desktop';
+            _error =
+                'ตั้งค่าการรับเงินไม่สมบูรณ์\nกรุณาระบุ PromptPay ID หรือ อัปโหลดรูป QR ใน POS Desktop';
           });
           return;
         }
@@ -165,63 +168,140 @@ class _DriverQrScreenState extends State<DriverQrScreen>
     });
   }
 
-  ({double? amount, String? customerName}) _getEffectiveCodData(BuildContext context) {
+  List<Job> _getAssignedCodJobs(BuildContext context) {
+    try {
+      final jobProvider = Provider.of<JobProvider>(context);
+      return jobProvider.driverAssignedJobs.where((job) {
+        final method = job.paymentMethod?.trim().toLowerCase();
+        final hasCod = job.price != null &&
+            job.price! > 0 &&
+            (method == null ||
+                method.isEmpty ||
+                method == 'credit' ||
+                method == 'cod');
+        return job.isDepartureApproved && job.status != 'completed' && hasCod;
+      }).toList();
+    } catch (e) {
+      debugPrint('DriverQrScreen: Cannot read assigned COD jobs: $e');
+      return const [];
+    }
+  }
+
+  ({double? amount, String? customerName}) _getEffectiveCodData(
+    BuildContext context,
+  ) {
     if (widget.codAmount != null) {
       return (amount: widget.codAmount, customerName: widget.customerName);
     }
-    try {
-      final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
-      final jobProvider = Provider.of<JobProvider>(context);
-      final currentUser = authProvider.currentUser;
-      if (currentUser == null) return (amount: null, customerName: null);
 
-      final jobs = jobProvider.driverAssignedJobs;
-      Job? activeCodJob;
-      
-      for (final job in jobs) {
-        final isMyJob = job.driverId == currentUser.uid ||
-            job.driverIds.contains(currentUser.uid) ||
-            job.deliveryTeam.any((m) => m.id == currentUser.uid);
+    final jobs = _getAssignedCodJobs(context);
+    if (jobs.isEmpty) return (amount: null, customerName: null);
 
-        if (isMyJob && job.status == 'shipping' && job.isDepartureApproved) {
-          final method = job.paymentMethod?.trim().toLowerCase();
-          final hasCod = job.price != null && job.price! > 0 && 
-                         (method == null || method.isEmpty || method == 'credit');
-          if (hasCod) {
-            activeCodJob = job;
-            debugPrint('DriverQrScreen: Found active COD job: ${job.id} for ${job.price}');
-            break;
-          }
-        }
+    var selectedJob = jobs.first;
+    for (final job in jobs) {
+      if (job.id == _selectedJobId) {
+        selectedJob = job;
+        break;
       }
-
-      if (activeCodJob != null) {
-        return (amount: activeCodJob.price, customerName: activeCodJob.customer.name);
-      } else {
-        debugPrint('DriverQrScreen: No active COD job found.');
-      }
-    } catch (e) {
-      debugPrint('DriverQrScreen Error: $e');
     }
-    return (amount: null, customerName: null);
+    return (
+      amount: selectedJob.price,
+      customerName: selectedJob.customer.name,
+    );
   }
 
   bool get _showStaticQr =>
-      _config != null &&
-      _config!.isStatic &&
-      !_forceDynamic;
+      _config != null && _config!.isStatic && !_forceDynamic;
 
   double? get effectiveCodAmount => _getEffectiveCodData(context).amount;
-  String? get effectiveCustomerName => _getEffectiveCodData(context).customerName;
+  String? get effectiveCustomerName =>
+      _getEffectiveCodData(context).customerName;
+  double? get effectiveQrAmount => _customQrAmount ?? effectiveCodAmount;
   String? get currentQrPayload {
-    final codAmount = effectiveCodAmount;
-    final hasCod = codAmount != null && codAmount > 0;
+    final qrAmount = effectiveQrAmount;
+    final hasAmount = qrAmount != null && qrAmount > 0;
     if (_config == null || _config!.promptPayId.isEmpty) return null;
-    final lockAmount = _forceDynamic && hasCod;
+    final lockAmount = _forceDynamic && hasAmount;
     return PromptPayHelper.generatePayload(
       _config!.promptPayId,
-      amount: lockAmount ? codAmount : null,
+      amount: lockAmount ? qrAmount : null,
     );
+  }
+
+  Future<void> _editQrAmount() async {
+    final codAmount = effectiveCodAmount;
+    if (codAmount == null || codAmount <= 0) return;
+
+    final controller = TextEditingController(
+      text:
+          effectiveQrAmount?.toStringAsFixed(2) ?? codAmount.toStringAsFixed(2),
+    );
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('แก้ไขยอดรับผ่าน QR'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('ยอด COD ของงาน: ฿${codAmount.toStringAsFixed(2)}'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              ],
+              decoration: const InputDecoration(
+                labelText: 'ยอดที่ให้ลูกค้าสแกน',
+                prefixText: '฿ ',
+                border: OutlineInputBorder(),
+                helperText: 'กรณีแบ่งจ่ายเงินสด ให้ใส่เฉพาะยอดที่เหลือ',
+              ),
+              onSubmitted: (_) {
+                final value = double.tryParse(controller.text);
+                if (value != null && value > 0 && value <= codAmount) {
+                  Navigator.pop(dialogContext, value);
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('ยกเลิก'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = double.tryParse(controller.text);
+              if (value == null || value <= 0 || value > codAmount) {
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'กรุณาใส่ยอดมากกว่า 0 และไม่เกิน ฿${codAmount.toStringAsFixed(2)}',
+                    ),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(dialogContext, value);
+            },
+            child: const Text('ใช้ยอดนี้'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (amount != null && mounted) {
+      setState(() {
+        _customQrAmount = amount;
+        _forceDynamic = true;
+      });
+    }
   }
 
   @override
@@ -299,11 +379,54 @@ class _DriverQrScreenState extends State<DriverQrScreen>
   }
 
   Widget _buildContent(bool hasCod) {
+    final assignedCodJobs =
+        widget.codAmount == null ? _getAssignedCodJobs(context) : const <Job>[];
     return SafeArea(
       child: Column(
         children: [
+          if (assignedCodJobs.length > 1)
+            Container(
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: assignedCodJobs.any((job) => job.id == _selectedJobId)
+                      ? _selectedJobId
+                      : assignedCodJobs.first.id,
+                  isExpanded: true,
+                  dropdownColor: const Color(0xFF1B263B),
+                  iconEnabledColor: Colors.tealAccent,
+                  style: const TextStyle(color: Colors.white),
+                  items: assignedCodJobs
+                      .map(
+                        (job) => DropdownMenuItem<String>(
+                          value: job.id,
+                          child: Text(
+                            '${job.customer.name} — ฿${job.price!.toStringAsFixed(2)}',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (jobId) {
+                    if (jobId != null) {
+                      setState(() {
+                        _selectedJobId = jobId;
+                        _customQrAmount = null;
+                      });
+                    }
+                  },
+                ),
+              ),
+            ),
+
           // --- Banner ลูกค้า ---
-          if (effectiveCustomerName != null && effectiveCustomerName!.isNotEmpty)
+          if (effectiveCustomerName != null &&
+              effectiveCustomerName!.isNotEmpty)
             Container(
               margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -340,7 +463,9 @@ class _DriverQrScreenState extends State<DriverQrScreen>
               ),
             ),
             child: Text(
-              _showStaticQr ? '📷 Static QR (จากร้าน)' : '⚡ Dynamic QR (สร้างอัตโนมัติ)',
+              _showStaticQr
+                  ? '📷 Static QR (จากร้าน)'
+                  : '⚡ Dynamic QR (สร้างอัตโนมัติ)',
               style: TextStyle(
                 color: _showStaticQr ? Colors.blue : Colors.tealAccent,
                 fontSize: 12,
@@ -422,8 +547,7 @@ class _DriverQrScreenState extends State<DriverQrScreen>
             const SizedBox(height: 12),
             AnimatedContainer(
               duration: const Duration(milliseconds: 300),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               decoration: BoxDecoration(
                 color: _forceDynamic
                     ? Colors.tealAccent.withValues(alpha: 0.15)
@@ -445,12 +569,10 @@ class _DriverQrScreenState extends State<DriverQrScreen>
                   const SizedBox(width: 8),
                   Text(
                     _forceDynamic
-                        ? '฿ ${effectiveCodAmount!.toStringAsFixed(2)} (ล็อคยอดแล้ว)'
+                        ? '฿ ${effectiveQrAmount!.toStringAsFixed(2)} (ล็อคยอดแล้ว)'
                         : '฿ ${effectiveCodAmount!.toStringAsFixed(2)} (กรอกยอดเอง)',
                     style: TextStyle(
-                      color: _forceDynamic
-                          ? Colors.tealAccent
-                          : Colors.white70,
+                      color: _forceDynamic ? Colors.tealAccent : Colors.white70,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -471,23 +593,42 @@ class _DriverQrScreenState extends State<DriverQrScreen>
                 if (hasCod && _config != null && _config!.hasDynamic) ...[
                   SizedBox(
                     width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _editQrAmount,
+                      icon: const Icon(Icons.edit),
+                      label: Text(
+                        _customQrAmount == null
+                            ? 'แก้ไขยอด QR / แบ่งจ่ายเงินสด'
+                            : 'ยอด QR ${effectiveQrAmount!.toStringAsFixed(2)} บาท (แก้ไข)',
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () {
                         setState(() => _forceDynamic = !_forceDynamic);
                         setState(() {});
                       },
                       icon: Icon(
-                        _forceDynamic 
-                            ? (_config!.isStatic ? Icons.image : Icons.lock_open)
+                        _forceDynamic
+                            ? (_config!.isStatic
+                                ? Icons.image
+                                : Icons.lock_open)
                             : Icons.lock,
                         size: 18,
                       ),
                       label: Text(
                         _forceDynamic
-                            ? (_config!.isStatic 
-                                ? 'กลับไปใช้รูป QR จากร้าน' 
+                            ? (_config!.isStatic
+                                ? 'กลับไปใช้รูป QR จากร้าน'
                                 : 'ปลดล็อคยอด (ลูกค้ากรอกเอง)')
-                            : 'ล็อคยอด ${effectiveCodAmount!.toStringAsFixed(0)} บาทใน QR',
+                            : 'ล็อคยอด ${effectiveQrAmount!.toStringAsFixed(2)} บาทใน QR',
                       ),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.tealAccent,

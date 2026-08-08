@@ -5,6 +5,7 @@ import 'user_role.dart';
 
 class UserModel {
   final String uid;
+  final String? employeeId;
   final String email;
   final String name;
   final UserRole role;
@@ -12,6 +13,7 @@ class UserModel {
 
   UserModel({
     required this.uid,
+    this.employeeId,
     required this.email,
     required this.name,
     required this.role,
@@ -56,6 +58,7 @@ class UserModel {
 
     return UserModel(
       uid: doc.id,
+      employeeId: data['employee_id']?.toString(),
       email: data['email'] ?? '',
       name: data['name'] ?? '',
       role: parsedRole,
@@ -69,6 +72,7 @@ class UserModel {
       roleStr = 'gas_station';
     }
     return {
+      if (employeeId != null) 'employee_id': employeeId,
       'email': email,
       'name': name,
       'role': roleStr,
@@ -78,6 +82,7 @@ class UserModel {
 
   // ✅ โค้ด copyWith ต้องวางที่ไฟล์นี้ครับ
   UserModel copyWith({
+    String? employeeId,
     String? email,
     String? name,
     UserRole? role,
@@ -85,6 +90,7 @@ class UserModel {
   }) {
     return UserModel(
       uid: uid,
+      employeeId: employeeId ?? this.employeeId,
       email: email ?? this.email,
       name: name ?? this.name,
       role: role ?? this.role,

@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/common/full_screen_image.dart
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 
 class FullScreenImage extends StatefulWidget {
@@ -72,59 +73,66 @@ class _FullScreenImageState extends State<FullScreenImage> {
           minScale: 0.1,
           maxScale: 5.0,
           child: Center(
-            child: Image.network(
-              widget.imageUrl,
-              fit: BoxFit.contain,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      CircularProgressIndicator(
-                        color: textColor,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'กำลังโหลดรูปภาพ... ${(loadingProgress.expectedTotalBytes != null ? "${((loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!) * 100).toStringAsFixed(0)}%" : "")}',
-                        style: TextStyle(color: textColor),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              errorBuilder: (context, error, stackTrace) {
-                return Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.broken_image_outlined,
-                          color: Colors.redAccent, size: 64),
-                      const SizedBox(height: 16),
-                      Text(
-                        'ไม่สามารถโหลดรูปภาพได้',
-                        style: TextStyle(
-                            color: textColor,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 32),
-                        child: Text(
-                          error.toString(),
-                          textAlign: TextAlign.center,
-                          style:
-                              const TextStyle(color: Colors.grey, fontSize: 12),
+            child: widget.imageUrl.startsWith('http://') || widget.imageUrl.startsWith('https://')
+                ? Image.network(
+                    widget.imageUrl,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, loadingProgress) {
+                      if (loadingProgress == null) return child;
+                      return Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(
+                              color: textColor,
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              'กำลังโหลดรูปภาพ... ${(loadingProgress.expectedTotalBytes != null ? "${((loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!) * 100).toStringAsFixed(0)}%" : "")}',
+                              style: TextStyle(color: textColor),
+                            ),
+                          ],
                         ),
-                      ),
-                    ],
+                      );
+                    },
+                    errorBuilder: (context, error, stackTrace) => _buildErrorWidget(textColor, error),
+                  )
+                : Image.file(
+                    File(widget.imageUrl),
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => _buildErrorWidget(textColor, error),
                   ),
-                );
-              },
-            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildErrorWidget(Color textColor, Object error) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.broken_image_outlined,
+              color: Colors.redAccent, size: 64),
+          const SizedBox(height: 16),
+          Text(
+            'ไม่สามารถโหลดรูปภาพได้',
+            style: TextStyle(
+                color: textColor,
+                fontSize: 18,
+                fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              error.toString(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey, fontSize: 12),
+            ),
+          ),
+        ],
       ),
     );
   }

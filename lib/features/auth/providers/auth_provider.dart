@@ -45,14 +45,16 @@ class AuthenticationProvider with ChangeNotifier {
         final parts = token.split('.');
         if (parts.length == 3) {
           final payload = jsonDecode(
-            utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))
-          );
+              utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))));
           // Import UserModel + UserRole to reconstruct
           // We'll just mark as logged-in with a minimal user from token
           _currentUser = UserModel(
             uid: payload['id']?.toString() ?? '0',
+            employeeId: payload['employee_id']?.toString(),
             email: payload['username']?.toString() ?? '',
-            name: payload['employee_name']?.toString() ?? payload['username']?.toString() ?? 'Unknown',
+            name: payload['employee_name']?.toString() ??
+                payload['username']?.toString() ??
+                'Unknown',
             role: _mapRole(payload['role']?.toString() ?? 'CASHIER'),
           );
           log('Auth State: Restored user from JWT: ${_currentUser!.name}');
@@ -83,7 +85,9 @@ class AuthenticationProvider with ChangeNotifier {
           log('Firebase Auto-Login successful on startup.');
         }
       } on FirebaseAuthException catch (e) {
-        if (e.code == 'user-not-found' || e.code == 'invalid-credential' || e.code == 'wrong-password') {
+        if (e.code == 'user-not-found' ||
+            e.code == 'invalid-credential' ||
+            e.code == 'wrong-password') {
           try {
             final offPass = prefs.getString('offline_password');
             if (offPass != null) {
@@ -123,10 +127,10 @@ class AuthenticationProvider with ChangeNotifier {
 
       _currentUser = await _authService.login(username, password);
       if (_currentUser != null) {
-          log('Auth State: Profile loaded for ${_currentUser!.name} (Role: ${_currentUser!.role.name})');
-          // API URL is configured locally — no longer synced from Firebase
+        log('Auth State: Profile loaded for ${_currentUser!.name} (Role: ${_currentUser!.role.name})');
+        // API URL is configured locally — no longer synced from Firebase
       }
-      
+
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -181,6 +185,18 @@ class AuthenticationProvider with ChangeNotifier {
     return _currentUser?.role.name.toLowerCase() == 'requester';
   }
 
+  /// สิทธิ์อนุมัติปล่อยรถถูกใช้ร่วมกันโดยผู้ดูแลระบบและพนักงานหน้าร้าน
+  /// (POS role CASHIER จะถูกแปลงเป็น requester ตอนเข้าสู่ระบบ)
+  bool get canApproveJobDeparture {
+    return isUserAdmin || isUserRequester;
+  }
+
+  /// Admin and requester (POS CASHIER) share responsibility for reporting
+  /// and maintaining the shop's low-stock/shortage list.
+  bool get canManageStockAlerts {
+    return isUserAdmin || isUserRequester;
+  }
+
   // ✅ [เพิ่มใหม่] ตรวจสอบสถานะ HR
   bool get isUserHr {
     return _currentUser?.role.name.toLowerCase() == 'hr';
@@ -196,12 +212,17 @@ class AuthenticationProvider with ChangeNotifier {
   // ----------------------------------------------------
   UserRole _mapRole(String roleStr) {
     switch (roleStr.toUpperCase()) {
-      case 'ADMIN': return UserRole.admin;
-      case 'DRIVER': return UserRole.driver;
-      case 'HR': return UserRole.hr;
-      case 'GAS_STATION': return UserRole.gasStation;
+      case 'ADMIN':
+        return UserRole.admin;
+      case 'DRIVER':
+        return UserRole.driver;
+      case 'HR':
+        return UserRole.hr;
+      case 'GAS_STATION':
+        return UserRole.gasStation;
       case 'CASHIER':
-      default: return UserRole.requester;
+      default:
+        return UserRole.requester;
     }
   }
 }

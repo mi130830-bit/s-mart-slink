@@ -2,6 +2,7 @@
 
 import 'package:s_link/utils/snackbar_utils.dart';
 import 'dart:developer';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -180,7 +181,7 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
                     icon: const Icon(Icons.cloud_download_outlined),
                     tooltip: 'โหลดงานจากร้าน (Sync)',
                     onPressed: () async {
-                      await jp.syncAndRefreshJobs();
+                      await jp.syncAndRefreshJobs(forceFullSync: true);
                       if (context.mounted) {
                         SnackbarUtils.showLeft(context, 'โหลดงานล่าสุดแล้ว!');
                       }
@@ -229,7 +230,7 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
                 TabBar(
                   controller: _tabController,
                   labelColor: Colors.blue,
-                  unselectedLabelColor: Colors.white70,
+                  unselectedLabelColor: Colors.grey,
                   tabs: const [
                     Tab(
                         text: 'กำลังดำเนินการ',
@@ -304,13 +305,14 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
                 return TabBarView(
                   controller: _tabController,
                   children: [
-                    // [M2] Tab 1: งานกำลังดำเนินการ — อ่านจาก Local SQLite + Pull-to-refresh
+                    // Firestore is authoritative for the Admin list. Local
+                    // SQLite is an offline cache and can retain a job that
+                    // has already been deleted from Firestore.
                     RefreshIndicator(
-                      onRefresh: () => jobProvider.syncAndRefreshJobs(),
+                      onRefresh: () =>
+                          jobProvider.syncAndRefreshJobs(forceFullSync: true),
                       child: _buildFilteredList(
-                        jobProvider.activeLocalJobs.isNotEmpty
-                            ? jobProvider.activeLocalJobs
-                            : jobProvider.pendingJobs,
+                        jobProvider.pendingJobs,
                         isHistory: false,
                       ),
                     ),
@@ -348,6 +350,48 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
       ),
       onSelected: (_) => _onRangeSelected(option),
     );
+  }
+
+  Widget _buildTrailing(Job job, bool isHistory) {
+    if (isHistory) {
+      final img = job.proofImage ?? job.billImageUrl;
+      if (img != null && img.isNotEmpty) {
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: img.startsWith('http')
+              ? Image.network(
+                  img,
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                )
+              : Image.file(
+                  File(img),
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                ),
+        );
+      } else {
+        return Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          alignment: Alignment.center,
+          child: const Text(
+            'ไม่มีรูป',
+            style: TextStyle(fontSize: 10, color: Colors.grey),
+            textAlign: TextAlign.center,
+          ),
+        );
+      }
+    }
+    return const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey);
   }
 
   Widget _buildFilteredList(List<Job> allJobs, {required bool isHistory}) {
@@ -503,8 +547,7 @@ class _AdminJobListScreenState extends State<AdminJobListScreen>
                 ],
               ],
             ),
-            trailing: const Icon(Icons.arrow_forward_ios,
-                size: 16, color: Colors.grey),
+            trailing: _buildTrailing(job, isHistory),
           ),
         );
       },

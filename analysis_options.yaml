@@ -9,6 +9,14 @@
 # packages, and plugins designed to encourage good coding practices.
 include: package:flutter_lints/flutter.yaml
 
+# Generated Isar adapters are maintained by the code generator. Standalone
+# diagnostic scripts are intentionally kept outside the production app.
+analyzer:
+  exclude:
+    - lib/**/*.g.dart
+    - query_fs.dart
+    - test_http.dart
+
 linter:
   # The lint rules applied to this project can be customized in the
   # section below to disable rules from the `package:flutter_lints/flutter.yaml`

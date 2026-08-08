@@ -1,5 +1,6 @@
 // ไฟล์: lib/screens/dashboard/driver_view.dart
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_messaging/firebase_messaging.dart'; // ✅ Import เพิ่มเติม
@@ -154,7 +155,11 @@ class _MyJobsTab extends StatelessWidget {
           final isPickupType =
               job.jobType == 'pickup' || job.jobType == 'customer_pickup';
           final isWalkIn = job.customer.name.toLowerCase().contains('walk-in');
-          return !job.isDepartureApproved && !isPickupType && !isWalkIn;
+          final isAssignedToMe = _isAssignedToCurrentUser(job, authProvider);
+          return !job.isDepartureApproved &&
+              !isAssignedToMe &&
+              !isPickupType &&
+              !isWalkIn;
         }).toList();
 
         // 2. งานกำลังดำเนินการ
@@ -162,7 +167,7 @@ class _MyJobsTab extends StatelessWidget {
           final isPickupType =
               job.jobType == 'pickup' || job.jobType == 'customer_pickup';
           final isWalkIn = job.customer.name.toLowerCase().contains('walk-in');
-          return job.isDepartureApproved && !isPickupType && !isWalkIn;
+          return !isPickupType && !isWalkIn;
         }).toList();
 
         if (isLoading) {
@@ -242,10 +247,25 @@ class _MyJobsTab extends StatelessWidget {
     );
   }
 
+  bool _isAssignedToCurrentUser(
+    Job job,
+    AuthenticationProvider authProvider,
+  ) {
+    final user = authProvider.currentUser;
+    if (user == null) return false;
+    final ids = {
+      if (user.uid.isNotEmpty) user.uid,
+      if (user.employeeId?.isNotEmpty == true) user.employeeId!,
+    };
+    return (job.driverId != null && ids.contains(job.driverId)) ||
+        job.driverIds.any(ids.contains) ||
+        job.deliveryTeam.any((member) => ids.contains(member.id));
+  }
+
   Widget _buildJobCard(BuildContext context, Job job, {required bool isMyJob}) {
     final isCompleted = job.status == 'completed';
     // ✅ Check if we should show "Close Job" button
-    final canClose = isMyJob && job.isDepartureApproved && !isCompleted;
+    final canClose = isMyJob && !isCompleted;
 
     return Card(
       elevation: 2,
@@ -375,8 +395,39 @@ class _MyJobsTab extends StatelessWidget {
                       elevation: 0,
                     ),
                   ),
-                )
-              ]
+                ),
+              ],
+              // ✅ Show Proof Image Preview for Completed Jobs (If photo exists)
+              if (isCompleted && job.proofImage != null && job.proofImage!.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    height: 100,
+                    width: double.infinity,
+                    color: Colors.grey[200],
+                    child: job.proofImage!.startsWith('http://') || job.proofImage!.startsWith('https://')
+                        ? Image.network(
+                            job.proofImage!,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => const Center(
+                              child: Icon(Icons.broken_image, color: Colors.grey),
+                            ),
+                          )
+                        : (File(job.proofImage!).existsSync()
+                            ? Image.file(
+                                File(job.proofImage!),
+                                fit: BoxFit.cover,
+                                errorBuilder: (context, error, stackTrace) => const Center(
+                                  child: Icon(Icons.broken_image, color: Colors.grey),
+                                ),
+                              )
+                            : const Center(
+                                child: Icon(Icons.broken_image, color: Colors.grey),
+                              )),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

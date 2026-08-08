@@ -7,7 +7,6 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 
 import 'package:s_link/features/jobs/models/job.dart';
 import 'package:s_link/features/jobs/providers/job_provider.dart';
@@ -15,6 +14,7 @@ import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'package:s_link/features/master_data/providers/master_data_provider.dart';
 
 import 'package:connectivity_plus/connectivity_plus.dart'; // ✅ Add
+import 'package:s_link/features/pos/services/pos_api_service.dart';
 
 class CompleteJobForm extends StatefulWidget {
   final Job job;
@@ -60,8 +60,8 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
     try {
       final pickedFile = await _picker.pickImage(
         source: source,
-        imageQuality: 50,
-        maxWidth: 800,
+        imageQuality: 30, // บีบอัดให้เล็กที่สุดเท่าที่จะพอดูรู้เรื่อง
+        maxWidth: 600, // ลดขนาดความกว้างลงอีกเพื่อประหยัดพื้นที่
       );
       if (pickedFile != null) {
         setState(() {
@@ -106,22 +106,23 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
     if (_imageFiles.isEmpty) return '';
     try {
       final file = _imageFiles.first;
-      final String fileName =
-          'proofs/${widget.job.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final storageRef = FirebaseStorage.instance.ref().child(fileName);
-      final uploadTask = storageRef.putFile(file);
-      final snapshot = await uploadTask.whenComplete(() {});
-      return await snapshot.ref.getDownloadURL();
+      // ✅ Upload through our Notebook / POS Server API (api.namecheap.work) instead of Firebase Storage
+      final proofUrl = await PosApiService().uploadProofImage(
+        imageFile: file,
+        jobId: widget.job.id,
+      );
+
+      if (proofUrl != null && proofUrl.isNotEmpty) {
+        return proofUrl;
+      }
+      return '';
     } catch (e) {
-      throw 'อัปโหลดรูปไม่สำเร็จ: $e';
+      debugPrint('Error uploading image to notebook: $e');
+      return '';
     }
   }
 
   Future<void> _getCurrentLocationAndSubmit() async {
-    if (_imageFiles.isEmpty) {
-      _showError('กรุณาถ่ายรูปหลักฐานการส่งมอบก่อน');
-      return;
-    }
 
     if (_isCodJob() && _isCodCollected) {
       final amount = double.tryParse(_codAmountController.text);
@@ -180,11 +181,6 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
   }
 
   Future<void> _submitForm(GeoPoint proofLocation) async {
-    // 1. ตรวจสอบข้อมูลก่อนส่ง (Validation)
-    if (_imageFiles.isEmpty) {
-      _showError('กรุณาถ่ายรูปหลักฐานการส่งมอบก่อน');
-      return;
-    }
 
     double? codAmount;
     if (_isCodJob() && _isCodCollected) {
@@ -213,14 +209,16 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
       final bool isOffline =
           connectivityResult.contains(ConnectivityResult.none);
 
-      String proofValue;
-      if (isOffline) {
-        // Use local path (first image in list)
-        proofValue = _imageFiles.first.path;
-        debugPrint('CompleteJobForm: Offline mode. Using local path for sync.');
-      } else {
-        // Upload image if online
-        proofValue = await _uploadProofImage();
+      String proofValue = '';
+      if (_imageFiles.isNotEmpty) {
+        if (isOffline) {
+          // Use local path (first image in list)
+          proofValue = _imageFiles.first.path;
+          debugPrint('CompleteJobForm: Offline mode. Using local path for sync.');
+        } else {
+          // Upload image if online
+          proofValue = await _uploadProofImage();
+        }
       }
 
       // ส่งข้อมูลปิดงาน
@@ -270,38 +268,43 @@ class _CompleteJobFormState extends State<CompleteJobForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: GestureDetector(
-                onTap: _showImagePickerOptions,
-                child: Container(
-                  height: 200,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey),
-                    image: _imageFiles.isNotEmpty
-                        ? DecorationImage(
-                            image: FileImage(_imageFiles.first),
-                            fit: BoxFit.cover)
-                        : null,
-                  ),
-                  child: _imageFiles.isEmpty
-                      ? const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.camera_alt,
-                                size: 50, color: Colors.grey),
-                            SizedBox(height: 8),
-                            Text('แตะเพื่อถ่ายรูปสินค้า/ใบเซ็นรับ',
-                                style: TextStyle(color: Colors.grey)),
-                          ],
-                        )
-                      : null,
+            if (_imageFiles.isNotEmpty) ...[
+              Center(
+                child: Stack(
+                  alignment: Alignment.topRight,
+                  children: [
+                    Container(
+                      height: 160,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                        image: DecorationImage(
+                          image: FileImage(_imageFiles.first),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.cancel, color: Colors.red, size: 28),
+                      onPressed: () => setState(() => _imageFiles.clear()),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 16),
+            ] else ...[
+              OutlinedButton.icon(
+                onPressed: _showImagePickerOptions,
+                icon: const Icon(Icons.camera_alt, color: Colors.grey),
+                label: const Text('ถ่ายรูปหลักฐาน (ถ้าต้องการ / ไม่บังคับ)', style: TextStyle(color: Colors.grey)),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 45),
+                  side: BorderSide(color: Colors.grey.shade400),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
             // ✅ COD Section (เฉพาะบิลเงินเชื่อ หรือบิลที่ยังไม่ระบุการชำระเงินแต่มี price)
             if (_isCodJob())
               Container(

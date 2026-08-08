@@ -7,6 +7,7 @@ import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'package:s_link/features/jobs/providers/job_provider.dart';
 import 'package:s_link/features/master_data/providers/master_data_provider.dart';
 import 'package:s_link/features/alerts/providers/alert_log_provider.dart';
+import 'package:s_link/core/services/sync_service.dart';
 import '../config/app_constants.dart';
 
 class AppStateManager {
@@ -29,8 +30,16 @@ class AppStateManager {
       final role = user?.role.name.toLowerCase();
 
       if (role == AppConstants.rolePending) return;
-      // พนักงานปั้ม ไม่ต้องรับข้อมูลใดๆ เพิ่มเติม (ใช้แค่หน้าลงเวลาเข้างาน)
-      if (role == 'gas_station' || role == 'gasstation') return;
+      // เริ่ม retry queue ของการลงเวลาทันทีหลังยืนยันตัวตน โดยไม่ผูกกับ
+      // การโหลดข้อมูลงานส่งของแต่ละ role เพื่อให้รายการออฟไลน์ซิงก์เอง
+      // เมื่อเน็ตกลับมา โดยไม่ต้องกดรีเฟรช
+      SyncService().startMonitoring();
+
+      // พนักงานปั๊มไม่ต้องโหลดข้อมูลงานส่งเพิ่มเติม
+      if (role == 'gas_station' || role == 'gasstation') {
+        _isListenersSetup = true;
+        return;
+      }
 
       log('Starting data listeners for role: $role');
 

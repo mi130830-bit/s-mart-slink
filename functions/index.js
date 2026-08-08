@@ -509,8 +509,12 @@ exports.onJobStatusChanged_LineOA = onDocumentUpdated("jobs/{jobId}", async (eve
             const localOrderId = after.localOrderId || '';
             if (localOrderId) {
                 const url = `${apiUrl}/api/v1/line/notify-stage2/${localOrderId}`;
+                const vehicle = (after.delivery_team || []).find((item) =>
+                    item && (item.type === 'vehicle' || item.type === 'car'));
+                const vehicleKey = vehicle?.name || vehicle?.licensePlate || '';
                 console.log(`📤 Syncing Stage 2 to Backend: ${url}`);
-                await axios.post(url, {}, { timeout: 5000 }).catch(e => console.error('Backend Stage 2 Sync Error:', e.message));
+                await axios.post(url, { vehicle: vehicleKey }, { timeout: 5000 })
+                    .catch(e => console.error('Backend Stage 2 Sync Error:', e.message));
             }
         } catch (e) {
             console.error('Stage 2 Error:', e);

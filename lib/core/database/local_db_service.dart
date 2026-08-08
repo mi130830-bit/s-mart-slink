@@ -1,4 +1,4 @@
-﻿// ไฟล์: lib/core/database/local_db_service.dart
+// ไฟล์: lib/core/database/local_db_service.dart
 // [Milestone 2] ฐานข้อมูล SQLite ในมือถือสำหรับ Cache งานจัดส่งแบบ Offline
 
 import 'dart:convert';
@@ -26,7 +26,7 @@ class LocalDbService {
     log('$_tag Initializing database at: $path');
     return await openDatabase(
       path,
-      version: 1,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -39,7 +39,8 @@ class LocalDbService {
     await db.execute('''
       CREATE TABLE local_jobs (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
-        orderId         INTEGER NOT NULL UNIQUE,
+        orderId         INTEGER NOT NULL,
+        ownerUid        TEXT NOT NULL DEFAULT '',
         firebaseJobId   TEXT,
         status          TEXT NOT NULL DEFAULT 'pending',
         jobType         TEXT NOT NULL DEFAULT 'delivery',
@@ -58,7 +59,12 @@ class LocalDbService {
         proofLng        REAL,
         completedAt     TEXT,
         downloadedAt    TEXT NOT NULL,
-        lastUpdatedAt   TEXT
+        lastUpdatedAt   TEXT,
+        isDepartureApproved INTEGER DEFAULT 0,
+        driverIds       TEXT DEFAULT '[]',
+        vehicleIds      TEXT DEFAULT '[]',
+        deliveryTeamJson TEXT DEFAULT '[]',
+        UNIQUE(ownerUid, orderId)
       )
     ''');
 
@@ -67,6 +73,7 @@ class LocalDbService {
       CREATE TABLE sync_queue (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
         jobId           TEXT NOT NULL,
+        ownerUid        TEXT NOT NULL DEFAULT '',
         orderId         INTEGER,
         firebaseJobId   TEXT,
         driverUid       TEXT,
@@ -88,19 +95,89 @@ class LocalDbService {
         syncStatus      TEXT NOT NULL DEFAULT 'pending'
       )
     ''');
+    await db.execute(
+        'CREATE INDEX idx_local_jobs_owner_status ON local_jobs(ownerUid, status)');
+    await db.execute(
+        'CREATE INDEX idx_sync_queue_status_created_at ON sync_queue(syncStatus, createdAt)');
+    await db.execute(
+        'CREATE INDEX idx_sync_queue_owner_status ON sync_queue(ownerUid, syncStatus)');
 
     log('$_tag All tables created successfully');
   }
 
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     log('$_tag Upgrading DB from v$oldVersion to v$newVersion');
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE local_jobs ADD COLUMN isDepartureApproved INTEGER DEFAULT 0');
+      await db.execute("ALTER TABLE local_jobs ADD COLUMN driverIds TEXT DEFAULT '[]'");
+      await db.execute("ALTER TABLE local_jobs ADD COLUMN vehicleIds TEXT DEFAULT '[]'");
+      await db.execute("ALTER TABLE local_jobs ADD COLUMN deliveryTeamJson TEXT DEFAULT '[]'");
+    }
+    if (oldVersion < 3) {
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_sync_queue_status_created_at ON sync_queue(syncStatus, createdAt)');
+    }
+    if (oldVersion < 4) {
+      await db.execute(
+          "ALTER TABLE local_jobs ADD COLUMN ownerUid TEXT NOT NULL DEFAULT ''");
+      await db.execute(
+          "ALTER TABLE sync_queue ADD COLUMN ownerUid TEXT NOT NULL DEFAULT ''");
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_local_jobs_owner_status ON local_jobs(ownerUid, status)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_sync_queue_owner_status ON sync_queue(ownerUid, syncStatus)');
+    }
+    if (oldVersion < 5) {
+      // Version 4 scoped rows by user but retained the old global UNIQUE
+      // constraint on orderId. Rebuild so multiple accounts on one device
+      // cannot overwrite each other's cache.
+      await db.execute('''
+        CREATE TABLE local_jobs_v5 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          orderId INTEGER NOT NULL,
+          ownerUid TEXT NOT NULL DEFAULT '',
+          firebaseJobId TEXT, status TEXT NOT NULL DEFAULT 'pending',
+          jobType TEXT NOT NULL DEFAULT 'delivery', paymentMethod TEXT NOT NULL DEFAULT 'cash',
+          totalAmount REAL NOT NULL DEFAULT 0, note TEXT, createdAt TEXT,
+          customerName TEXT, customerPhone TEXT, customerAddress TEXT,
+          customerLat REAL, customerLng REAL, itemsJson TEXT DEFAULT '[]',
+          proofImagePath TEXT, proofLat REAL, proofLng REAL, completedAt TEXT,
+          downloadedAt TEXT NOT NULL, lastUpdatedAt TEXT,
+          isDepartureApproved INTEGER DEFAULT 0, driverIds TEXT DEFAULT '[]',
+          vehicleIds TEXT DEFAULT '[]', deliveryTeamJson TEXT DEFAULT '[]',
+          UNIQUE(ownerUid, orderId)
+        )
+      ''');
+      await db.execute('''
+        INSERT INTO local_jobs_v5 (
+          id, orderId, ownerUid, firebaseJobId, status, jobType, paymentMethod,
+          totalAmount, note, createdAt, customerName, customerPhone,
+          customerAddress, customerLat, customerLng, itemsJson, proofImagePath,
+          proofLat, proofLng, completedAt, downloadedAt, lastUpdatedAt,
+          isDepartureApproved, driverIds, vehicleIds, deliveryTeamJson
+        ) SELECT
+          id, orderId, ownerUid, firebaseJobId, status, jobType, paymentMethod,
+          totalAmount, note, createdAt, customerName, customerPhone,
+          customerAddress, customerLat, customerLng, itemsJson, proofImagePath,
+          proofLat, proofLng, completedAt, downloadedAt, lastUpdatedAt,
+          isDepartureApproved, driverIds, vehicleIds, deliveryTeamJson
+        FROM local_jobs
+      ''');
+      await db.execute('DROP TABLE local_jobs');
+      await db.execute('ALTER TABLE local_jobs_v5 RENAME TO local_jobs');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_local_jobs_owner_status ON local_jobs(ownerUid, status)');
+    }
   }
 
   // ═══════════════════════════════════════════════════
   // LOCAL JOBS CRUD
   // ═══════════════════════════════════════════════════
 
-  Future<void> upsertJob(Map<String, dynamic> apiJob) async {
+  Future<void> upsertJob(
+    Map<String, dynamic> apiJob, {
+    required String ownerUid,
+  }) async {
     final db = await database;
     final now = DateTime.now().toIso8601String();
     final orderId = apiJob['orderId'];
@@ -109,6 +186,7 @@ class LocalDbService {
 
     final row = {
       'orderId':         orderId,
+      'ownerUid':        ownerUid,
       'firebaseJobId':   apiJob['firebaseJobId'] ?? '',
       'status':          apiJob['status'] ?? 'pending',
       'jobType':         apiJob['jobType'] ?? 'delivery',
@@ -124,21 +202,88 @@ class LocalDbService {
       'itemsJson':       jsonEncode(items),
       'downloadedAt':    now,
       'lastUpdatedAt':   now,
+      'isDepartureApproved':
+          apiJob['isDepartureApproved'] == true ||
+                  apiJob['is_departure_approved'] == true
+              ? 1
+              : 0,
+      'driverIds': jsonEncode(apiJob['driverIds'] ?? apiJob['driver_ids'] ?? []),
+      'vehicleIds': jsonEncode(apiJob['vehicleIds'] ?? apiJob['vehicle_ids'] ?? []),
+      'deliveryTeamJson':
+          jsonEncode(apiJob['deliveryTeam'] ?? apiJob['delivery_team'] ?? []),
     };
+
+    // Prevent Overwriting Offline Completed Jobs (Zombie Job Fix)
+    final existing = await db.query(
+      'local_jobs',
+      columns: ['status', 'proofImagePath', 'isDepartureApproved', 'driverIds', 'vehicleIds', 'deliveryTeamJson'],
+      where: 'orderId = ? AND ownerUid = ?',
+      whereArgs: [orderId, ownerUid],
+      limit: 1,
+    );
+
+    if (existing.isNotEmpty) {
+      final local = existing.first;
+      if (local['status'] == 'completed' || local['proofImagePath'] != null) {
+        log('$_tag Job $orderId is completed locally. Skipping overwrite from API.');
+        return;
+      }
+      
+      // Preserve locally assigned data only when the API response does not
+      // contain it. This prevents a stale local cache from overwriting the
+      // latest driver assignment or departure approval from the server.
+      if ((apiJob['driverIds'] ?? apiJob['driver_ids']) == null) {
+        row['driverIds'] = local['driverIds'] ?? '[]';
+      }
+      if ((apiJob['vehicleIds'] ?? apiJob['vehicle_ids']) == null) {
+        row['vehicleIds'] = local['vehicleIds'] ?? '[]';
+      }
+      if ((apiJob['deliveryTeam'] ?? apiJob['delivery_team']) == null) {
+        row['deliveryTeamJson'] = local['deliveryTeamJson'] ?? '[]';
+      }
+      if (apiJob['isDepartureApproved'] == null &&
+          apiJob['is_departure_approved'] == null) {
+        row['isDepartureApproved'] = local['isDepartureApproved'] ?? 0;
+      }
+    }
 
     await db.insert('local_jobs', row, conflictAlgorithm: ConflictAlgorithm.replace);
     log('$_tag Upsert job orderId=$orderId');
   }
 
-  Future<List<Map<String, dynamic>>> getActiveJobs() async {
+  Future<List<Map<String, dynamic>>> getActiveJobs(String ownerUid) async {
     final db = await database;
     final rows = await db.query(
       'local_jobs',
-      where: "status != 'completed' AND proofImagePath IS NULL",
+      where: "ownerUid = ? AND status != 'completed' AND proofImagePath IS NULL",
+      whereArgs: [ownerUid],
       orderBy: 'createdAt DESC',
     );
     log('$_tag Loaded ${rows.length} active jobs from local DB');
     return rows;
+  }
+
+  Future<void> updateOfflineAssignment(
+    int orderId,
+    bool isDepartureApproved,
+    List<String> driverIds,
+    List<String> vehicleIds,
+    List<dynamic> deliveryTeam,
+    String ownerUid,
+  ) async {
+    final db = await database;
+    await db.update(
+      'local_jobs',
+      {
+        'isDepartureApproved': isDepartureApproved ? 1 : 0,
+        'driverIds': jsonEncode(driverIds),
+        'vehicleIds': jsonEncode(vehicleIds),
+        'deliveryTeamJson': jsonEncode(deliveryTeam),
+      },
+      where: 'orderId = ? AND ownerUid = ?',
+      whereArgs: [orderId, ownerUid],
+    );
+    log('$_tag Updated offline assignment for orderId=$orderId');
   }
 
   Future<List<Map<String, dynamic>>> getAllJobs() async {
@@ -146,12 +291,13 @@ class LocalDbService {
     return await db.query('local_jobs', orderBy: 'createdAt DESC');
   }
 
-  Future<Map<String, dynamic>?> getJobByOrderId(int orderId) async {
+  Future<Map<String, dynamic>?> getJobByOrderId(
+      int orderId, String ownerUid) async {
     final db = await database;
     final rows = await db.query(
       'local_jobs',
-      where: 'orderId = ?',
-      whereArgs: [orderId],
+      where: 'orderId = ? AND ownerUid = ?',
+      whereArgs: [orderId, ownerUid],
       limit: 1,
     );
     return rows.isNotEmpty ? rows.first : null;
@@ -159,6 +305,7 @@ class LocalDbService {
 
   Future<void> markJobCompleted({
     required int orderId,
+    required String ownerUid,
     required String proofImagePath,
     required double proofLat,
     required double proofLng,
@@ -175,16 +322,38 @@ class LocalDbService {
         'completedAt':    now,
         'lastUpdatedAt':  now,
       },
-      where: 'orderId = ?',
-      whereArgs: [orderId],
+      where: 'orderId = ? AND ownerUid = ?',
+      whereArgs: [orderId, ownerUid],
     );
     log('$_tag Marked job orderId=$orderId as completed ($count rows)');
   }
 
-  Future<void> deleteJob(int orderId) async {
+  Future<void> deleteJob(int orderId, String ownerUid) async {
     final db = await database;
-    final count = await db.delete('local_jobs', where: 'orderId = ?', whereArgs: [orderId]);
+    final count = await db.delete(
+      'local_jobs',
+      where: 'orderId = ? AND ownerUid = ?',
+      whereArgs: [orderId, ownerUid],
+    );
     log('$_tag Deleted job orderId=$orderId ($count rows)');
+  }
+
+  /// Version 4 adds user scopes. Records created by older app versions had no
+  /// owner, so claim them once for the first authenticated user after upgrade.
+  Future<void> claimUnownedRecords(String ownerUid) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await txn.update(
+        'local_jobs',
+        {'ownerUid': ownerUid},
+        where: "ownerUid = ''",
+      );
+      await txn.update(
+        'sync_queue',
+        {'ownerUid': ownerUid},
+        where: "ownerUid = ''",
+      );
+    });
   }
 
   Future<int> cleanupOldCompletedJobs() async {
@@ -203,11 +372,36 @@ class LocalDbService {
   // SYNC QUEUE
   // ═══════════════════════════════════════════════════
 
-  Future<int> enqueueSync(Map<String, dynamic> data) async {
+  Future<int> enqueueSync(Map<String, dynamic> data, String ownerUid) async {
     final db = await database;
-    final id = await db.insert('sync_queue', {
-      'jobId':             data['jobId']?.toString() ?? '',
-      'orderId':           data['orderId'],
+    return _enqueueSync(db, data, ownerUid);
+  }
+
+  Future<int> _enqueueSync(
+    DatabaseExecutor executor,
+    Map<String, dynamic> data,
+    String ownerUid,
+  ) async {
+    final jobId = data['jobId']?.toString() ?? '';
+    final orderId = data['orderId'];
+
+    // A double tap or reconnect must not create two completion requests for
+    // the same job, especially because it can duplicate a COD payment.
+    final existing = await executor.query(
+      'sync_queue',
+      columns: ['id'],
+      where: 'ownerUid = ? AND jobId = ? AND syncStatus IN (?, ?)',
+      whereArgs: [ownerUid, jobId, 'pending', 'uploading'],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) {
+      return existing.first['id'] as int;
+    }
+
+    final id = await executor.insert('sync_queue', {
+      'jobId':             jobId,
+      'ownerUid':          ownerUid,
+      'orderId':           orderId,
       'firebaseJobId':     data['firebaseJobId'] ?? '',
       'driverUid':         data['driverUid'] ?? '',
       'driverName':        data['driverName'] ?? '',
@@ -229,29 +423,82 @@ class LocalDbService {
     return id;
   }
 
-  Future<List<Map<String, dynamic>>> getPendingSyncItems() async {
+  /// Queue the completion and hide the job locally in the same transaction.
+  /// A crash can no longer leave one action saved without the other.
+  Future<void> queueCompletedJob(
+    Map<String, dynamic> data,
+    String ownerUid,
+  ) async {
+    final db = await database;
+    await db.transaction((txn) async {
+      await _enqueueSync(txn, data, ownerUid);
+      final orderId = int.tryParse(data['orderId']?.toString() ?? '');
+      if (orderId == null) return;
+      await txn.update(
+        'local_jobs',
+        {
+          'status': 'completed',
+          'proofImagePath': data['localImagePath'] ?? '',
+          'proofLat': (data['lat'] as num?)?.toDouble() ?? 0.0,
+          'proofLng': (data['lng'] as num?)?.toDouble() ?? 0.0,
+          'completedAt': DateTime.now().toIso8601String(),
+          'lastUpdatedAt': DateTime.now().toIso8601String(),
+        },
+        where: 'orderId = ? AND ownerUid = ?',
+        whereArgs: [orderId, ownerUid],
+      );
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingSyncItems(String ownerUid) async {
     final db = await database;
     return await db.query(
       'sync_queue',
-      where: "syncStatus = 'pending'",
+      where: "ownerUid = ? AND syncStatus = 'pending'",
+      whereArgs: [ownerUid],
       orderBy: 'createdAt ASC',
     );
   }
 
   Future<void> updateSyncStatus(int id, String status) async {
     final db = await database;
-    final current = await _getRetryCount(id);
     await db.update(
       'sync_queue',
       {
         'syncStatus':  status,
         'lastRetryAt': DateTime.now().toIso8601String(),
-        'retryCount':  current + 1,
       },
       where: 'id = ?',
       whereArgs: [id],
     );
-    log('$_tag sync_queue id=$id -> status=$status (retry #${current + 1})');
+    log('$_tag sync_queue id=$id -> status=$status');
+  }
+
+  Future<void> recordSyncFailure(int id) async {
+    final db = await database;
+    final current = await _getRetryCount(id);
+    await db.update(
+      'sync_queue',
+      {
+        'syncStatus': 'pending',
+        'lastRetryAt': DateTime.now().toIso8601String(),
+        'retryCount': current + 1,
+      },
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    log('$_tag sync_queue id=$id failed (retry #${current + 1})');
+  }
+
+  Future<void> recoverInterruptedSyncs(String ownerUid) async {
+    final db = await database;
+    final count = await db.update(
+      'sync_queue',
+      {'syncStatus': 'pending'},
+      where: 'ownerUid = ? AND syncStatus = ?',
+      whereArgs: [ownerUid, 'uploading'],
+    );
+    if (count > 0) log('$_tag Recovered $count interrupted sync item(s)');
   }
 
   Future<int> _getRetryCount(int id) async {

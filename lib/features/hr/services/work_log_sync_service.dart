@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:isar/isar.dart';
 import 'package:s_link/features/hr/models/shop_work_log_isar.dart';
 import 'package:s_link/services/isar_service.dart';
@@ -82,7 +81,7 @@ class WorkLogSyncService {
         };
 
         final response = await _apiService.postRaw('/hr/worklogs/sync', payload);
-        if (response != null && response['status'] == 'success') {
+        if (response['status'] == 'success') {
           // Mark as synced
           await isar.writeTxn(() async {
             for (var logEntry in toSync) {
@@ -103,7 +102,7 @@ class WorkLogSyncService {
       if (delLog.syncId != null) {
         try {
           final response = await _apiService.deleteRaw('/hr/worklogs/${delLog.syncId}');
-          if (response != null && response['status'] == 'success') {
+          if (response['status'] == 'success') {
             // Remove completely from Isar once deleted on server
             await isar.writeTxn(() async {
               await isar.shopWorkLogIsars.delete(delLog.id);

@@ -1,4 +1,4 @@
-﻿// ไฟล์: lib/features/jobs/providers/job_provider.dart
+// ไฟล์: lib/features/jobs/providers/job_provider.dart
 // [Milestone 2] ปรับให้อ่านงาน active จาก LocalJobRepository (SQLite) แทน Firebase
 
 import 'package:flutter/material.dart';
@@ -18,7 +18,6 @@ import 'package:s_link/features/pos/services/pos_api_service.dart';
 import 'package:s_link/core/services/notification_service.dart';
 import 'package:s_link/features/jobs/models/job.dart';
 import 'package:s_link/features/auth/models/user.dart';
-import 'package:http/http.dart' as http;
 
 class JobProvider with ChangeNotifier {
   final JobService _jobService;
@@ -52,35 +51,76 @@ class JobProvider with ChangeNotifier {
   Map<String, dynamic> get summaryStats => _summaryStats;
   bool get isSyncingDown => _isSyncingDown;
 
-  // [M2] งานของคนขับให้อ่านจาก Local SQLite เป็นหลัก
+  // Merge the local cache with Firestore assignment streams. The cache does
+  // not always include assignment/approval fields, so it must never replace
+  // the live data used to decide which jobs belong to a driver.
   List<Job> get driverAssignedJobs {
-    if (_activeLocalJobs.isNotEmpty) {
-      log('[JobProvider] Serving ${_activeLocalJobs.length} jobs from LOCAL SQLite');
-      return _activeLocalJobs;
+    final Map<String, Job> jobMap = {};
+
+    // Keep locally saved assignments available offline, but only for this
+    // driver. Never expose every active cached job to a driver.
+    for (final job in _activeLocalJobs) {
+      if (_isAssignedToCurrentUser(job)) jobMap[job.id] = job;
     }
 
-    // Fallback: Firebase Stream (ใช้เมื่อ Local ว่าง เช่น ครั้งแรกที่ใช้แอป)
-    final Map<String, Job> jobMap = {};
-    for (var job in _legacyAssignedJobs) { jobMap[job.id] = job; }
-    for (var job in _driverAssignedJobs) { jobMap[job.id] = job; }
-    if (_currentUser != null) {
-      for (var job in _pendingJobs) {
-        final isAssigned = job.driverIds.contains(_currentUser!.uid) ||
-            job.driverId == _currentUser!.uid;
-        if (isAssigned) jobMap[job.id] = job;
-      }
+    // Firestore is authoritative for assignment and departure approval.
+    // These overwrite the cache when both sources contain the same job.
+    for (final job in _legacyAssignedJobs) {
+      jobMap[job.id] = job;
     }
-    for (var job in _localAssignedJobs) { jobMap[job.id] = job; }
+    for (final job in _driverAssignedJobs) {
+      jobMap[job.id] = job;
+    }
+    for (final job in _pendingJobs) {
+      if (_isAssignedToCurrentUser(job)) jobMap[job.id] = job;
+    }
+    for (final job in _localAssignedJobs) {
+      jobMap[job.id] = job;
+    }
 
     final merged = jobMap.values.where((j) => j.status != 'completed').toList();
     merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    log('[JobProvider] Serving ${merged.length} jobs from Firebase fallback');
+    log('[JobProvider] Serving ${merged.length} assigned jobs');
     return merged;
   }
 
+  bool _isAssignedToCurrentUser(Job job) {
+    final ids = _currentAssignmentIds;
+    if (ids.isEmpty) return false;
+    return (job.driverId != null && ids.contains(job.driverId)) ||
+        job.driverIds.any(ids.contains) ||
+        job.deliveryTeam.any((member) => ids.contains(member.id));
+  }
+
+  Set<String> get _currentAssignmentIds => {
+        if (_currentUser?.uid.isNotEmpty == true) _currentUser!.uid,
+        if (_currentUser?.employeeId?.isNotEmpty == true)
+          _currentUser!.employeeId!,
+      };
+
   bool get isLoading => _isLoading;
 
-  JobProvider(this._jobService);
+  Future<void> _persistAssignedJobsToCache(List<Job> jobs) async {
+    final ownerUid = _currentUser?.uid;
+    if (ownerUid == null || ownerUid.isEmpty) return;
+    for (final job in jobs) {
+      if (!_isAssignedToCurrentUser(job) || job.localOrderId == null) continue;
+      await _localRepo.updateOfflineAssignment(
+        job.localOrderId!,
+        job.isDepartureApproved,
+        job.driverIds,
+        job.vehicleIds ?? const [],
+        job.deliveryTeam.map((member) => member.toJson()).toList(),
+        ownerUid,
+      );
+    }
+  }
+
+  JobProvider(this._jobService) {
+    SyncService().onSyncComplete.listen((_) {
+      loadLocalJobs();
+    });
+  }
 
   // ═══════════════════════════════════════════════════════
   // [M2] LOAD FROM LOCAL DB
@@ -90,7 +130,12 @@ class JobProvider with ChangeNotifier {
   Future<void> loadLocalJobs() async {
     log('[JobProvider] Loading active jobs from Local SQLite...');
     try {
-      _activeLocalJobs = await _localRepo.getActiveJobs();
+      final ownerUid = _currentUser?.uid;
+      if (ownerUid == null || ownerUid.isEmpty) {
+        _activeLocalJobs = [];
+        return;
+      }
+      _activeLocalJobs = await _localRepo.getActiveJobs(ownerUid);
       log('[JobProvider] Loaded ${_activeLocalJobs.length} jobs from local DB');
       notifyListeners();
     } catch (e) {
@@ -109,7 +154,8 @@ class JobProvider with ChangeNotifier {
 
     try {
       log('[JobProvider][syncDown] Starting download from POS Backend...');
-      final count = await SyncService().syncJobsDown(forceFullSync: forceFullSync);
+      final count =
+          await SyncService().syncJobsDown(forceFullSync: forceFullSync);
       log('[JobProvider][syncDown] Downloaded $count jobs. Refreshing local view...');
       await loadLocalJobs();
     } catch (e) {
@@ -147,11 +193,13 @@ class JobProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> fetchCompletedJobsByRange(DateTime startDate, DateTime endDate) async {
+  Future<void> fetchCompletedJobsByRange(
+      DateTime startDate, DateTime endDate) async {
     try {
       _isLoading = true;
       notifyListeners();
-      final jobs = await _jobService.getCompletedJobsByDateRange(startDate, endDate);
+      final jobs =
+          await _jobService.getCompletedJobsByDateRange(startDate, endDate);
       _completedJobs = jobs;
       log('[JobProvider] Fetched ${_completedJobs.length} completed jobs');
     } catch (e) {
@@ -186,7 +234,8 @@ class JobProvider with ChangeNotifier {
       notifyListeners();
       final now = DateTime.now();
       final sixtyDaysAgo = now.subtract(const Duration(days: 60));
-      final history = await PosApiService().getDeliveryHistory(startDate: sixtyDaysAgo, endDate: now);
+      final history = await PosApiService()
+          .getDeliveryHistory(startDate: sixtyDaysAgo, endDate: now);
       _statsJobs = history.map((m) => Job.fromHistory(m)).toList();
       log('[JobProvider] Fetched ${_statsJobs.length} jobs from MySQL history');
     } catch (e) {
@@ -208,6 +257,7 @@ class JobProvider with ChangeNotifier {
   void startListeningToJobs(UserModel? currentUser) {
     if (currentUser == null) return;
     _currentUser = currentUser;
+    SyncService().setActiveUser(currentUser.uid);
 
     // [M2] เริ่ม monitor connectivity สำหรับ auto-sync
     SyncService().startMonitoring();
@@ -220,7 +270,10 @@ class JobProvider with ChangeNotifier {
     NotificationService.initialize();
 
     // [M2] โหลดงานจาก Local DB ทันที (ออฟไลน์ได้เลย)
-    loadLocalJobs().then((_) {
+    _localRepo
+        .claimUnownedRecords(currentUser.uid)
+        .then((_) => loadLocalJobs())
+        .then((_) {
       // จากนั้น sync จาก API เพื่ออัปเดต (ถ้ามีเน็ต)
       syncAndRefreshJobs();
     });
@@ -256,9 +309,14 @@ class JobProvider with ChangeNotifier {
       fetchCompletedJobsByRange(today, today);
     }
 
+    final assignmentIds = _currentAssignmentIds.toList();
     _driverAssignedJobsSubscription =
-        _jobService.getDriverAssignedJobs(currentUser.uid).listen((jobs) {
+        _jobService.getDriverAssignedJobs(assignmentIds).listen((jobs) {
       _driverAssignedJobs = jobs;
+      _persistAssignedJobsToCache(jobs).catchError(
+        (error) =>
+            log('[JobProvider] Failed to cache driver assignments: $error'),
+      );
       if (_localAssignedJobs.isNotEmpty) {
         final streamIds = jobs.map((e) => e.id).toSet();
         _localAssignedJobs.removeWhere((local) => streamIds.contains(local.id));
@@ -269,8 +327,12 @@ class JobProvider with ChangeNotifier {
     });
 
     _legacyJobsSubscription =
-        _jobService.getLegacyDriverAssignedJobs(currentUser.uid).listen((jobs) {
+        _jobService.getLegacyDriverAssignedJobs(assignmentIds).listen((jobs) {
       _legacyAssignedJobs = jobs;
+      _persistAssignedJobsToCache(jobs).catchError(
+        (error) =>
+            log('[JobProvider] Failed to cache legacy assignments: $error'),
+      );
       notifyListeners();
     }, onError: (error) {
       log('[JobProvider] Firebase Legacy stream error: $error');
@@ -319,6 +381,7 @@ class JobProvider with ChangeNotifier {
         if (orderId != null) {
           await _localRepo.markCompleted(
             orderId: orderId,
+            ownerUid: driverUid,
             proofImagePath: proofImage,
             proofLat: proofLocation.latitude,
             proofLng: proofLocation.longitude,
@@ -326,19 +389,19 @@ class JobProvider with ChangeNotifier {
         }
 
         final jobData = {
-          'jobId':         jobId,
-          'driverUid':     driverUid,
+          'jobId': jobId,
+          'driverUid': driverUid,
           'localImagePath': proofImage,
-          'lat':           proofLocation.latitude,
-          'lng':           proofLocation.longitude,
-          'timestamp':     DateTime.now().toIso8601String(),
-          'deliveryTeam':  deliveryTeamData,
+          'lat': proofLocation.latitude,
+          'lng': proofLocation.longitude,
+          'timestamp': DateTime.now().toIso8601String(),
+          'deliveryTeam': deliveryTeamData,
           if (collectedCod != null) 'collectedCod': collectedCod,
           if (customerId != null) 'customerId': customerId,
           if (orderId != null) 'orderId': orderId,
         };
 
-        await SyncService().saveOfflineJob(jobData);
+        await SyncService().saveOfflineJob(jobData, ownerUid: driverUid);
 
         // Optimistic UI update
         _activeLocalJobs.removeWhere((j) => j.localOrderId == orderId);
@@ -385,6 +448,7 @@ class JobProvider with ChangeNotifier {
       if (orderId != null) {
         await _localRepo.markCompleted(
           orderId: orderId,
+          ownerUid: driverUid,
           proofImagePath: proofImage,
           proofLat: proofLocation.latitude,
           proofLng: proofLocation.longitude,
@@ -412,7 +476,7 @@ class JobProvider with ChangeNotifier {
 
       // ── [M2] ลบงานออกจาก Local SQLite หลัง sync สำเร็จ ───────────
       if (orderId != null) {
-        await _localRepo.deleteJob(orderId);
+        await _localRepo.deleteJob(orderId, driverUid);
         _activeLocalJobs.removeWhere((j) => j.localOrderId == orderId);
         notifyListeners();
         log('[JobProvider] Job orderId=$orderId deleted from local DB after successful sync');
@@ -424,16 +488,17 @@ class JobProvider with ChangeNotifier {
             .where((e) => e['type'] == 'car' || e['type'] == 'vehicle')
             .firstOrNull;
         final String vehicleNameForGps = vehicleEntry != null
-            ? ((vehicleEntry['licensePlate']?.toString().isNotEmpty == true
-                ? vehicleEntry['licensePlate']
-                : vehicleEntry['name'])?.toString() ?? 'ไม่ระบุรถ')
+            ? ((vehicleEntry['name']?.toString().trim().isNotEmpty == true
+                        ? vehicleEntry['name']
+                        : vehicleEntry['licensePlate'])
+                    ?.toString() ??
+                'ไม่ระบุรถ')
             : 'ไม่ระบุรถ';
 
-        await http.post(
-          Uri.parse('https://api.namecheap.work/api/v1/gps/update_job'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'vehicle': vehicleNameForGps, 'jobStatus': 'กำลังกลับร้าน'}),
-        ).timeout(const Duration(seconds: 3));
+        await PosApiService().postRaw('/gps/update_job', {
+          'vehicle': vehicleNameForGps,
+          'jobStatus': 'กำลังกลับร้าน',
+        }).timeout(const Duration(seconds: 3));
       } catch (e) {
         log('[JobProvider] GPS status update failed (non-fatal): $e');
       }
@@ -458,14 +523,18 @@ class JobProvider with ChangeNotifier {
     final tag = '[JobProvider][_notifyPosBackend]';
     try {
       log('$tag Fetching job data from Firestore for jobId=$jobId...');
-      final doc = await firestore.FirebaseFirestore.instance.collection('jobs').doc(jobId).get();
+      final doc = await firestore.FirebaseFirestore.instance
+          .collection('jobs')
+          .doc(jobId)
+          .get();
       if (!doc.exists) {
         log('$tag Firestore doc not found, building payload from local data...');
       }
       final data = doc.data() ?? {};
 
       final customer = data['customer'] as Map<String, dynamic>? ?? {};
-      final double totalAmount = (data['price'] as num?)?.toDouble() ?? collectedCod ?? 0.0;
+      final double totalAmount =
+          (data['price'] as num?)?.toDouble() ?? collectedCod ?? 0.0;
 
       List<String> drivers = [];
       String vehiclePlate = '';
@@ -475,24 +544,25 @@ class JobProvider with ChangeNotifier {
           if (name.isNotEmpty) drivers.add(name);
         }
         if (m['type'] == 'car' && vehiclePlate.isEmpty) {
-          vehiclePlate = m['vehicle_plate']?.toString() ?? m['name']?.toString() ?? '';
+          vehiclePlate =
+              m['vehicle_plate']?.toString() ?? m['name']?.toString() ?? '';
         }
       }
 
       final body = jsonEncode({
-        'orderId':         orderId ?? data['localOrderId'] ?? data['order_id'] ?? 0,
-        'firebaseJobId':   jobId,
-        'driverName':      drivers.join(', '),
-        'vehiclePlate':    vehiclePlate,
-        'customerName':    customer['name'] ?? '',
-        'customerPhone':   customer['phoneNumber'] ?? customer['phone'] ?? '',
+        'orderId': orderId ?? data['localOrderId'] ?? data['order_id'] ?? 0,
+        'firebaseJobId': jobId,
+        'driverName': drivers.join(', '),
+        'vehiclePlate': vehiclePlate,
+        'customerName': customer['name'] ?? '',
+        'customerPhone': customer['phoneNumber'] ?? customer['phone'] ?? '',
         'customerAddress': customer['address'] ?? '',
-        'totalAmount':     totalAmount,
-        'jobType':         data['job_type'] ?? 'delivery',
-        'note':            data['details'] ?? '',
-        'latitude':        proofLocation.latitude,
-        'longitude':       proofLocation.longitude,
-        'billImageUrl':    proofImage ?? data['proof_image'] ?? '',
+        'totalAmount': totalAmount,
+        'jobType': data['job_type'] ?? 'delivery',
+        'note': data['details'] ?? '',
+        'latitude': proofLocation.latitude,
+        'longitude': proofLocation.longitude,
+        'billImageUrl': proofImage ?? data['proof_image'] ?? '',
       });
 
       final result = await PosApiService().postRaw('/jobs/complete', body);
@@ -513,12 +583,44 @@ class JobProvider with ChangeNotifier {
   }
 
   Future<void> deleteJob(String jobId) async {
+    Job? cachedJob;
+    for (final job in _activeLocalJobs) {
+      if (job.id == jobId) {
+        cachedJob = job;
+        break;
+      }
+    }
+    if (cachedJob != null) {
+      await removeCachedJob(cachedJob);
+    }
+
     await _jobService.deleteJob(jobId);
+    notifyListeners();
+  }
+
+  /// Remove a stale job from the offline cache. This is used when Firestore
+  /// confirms that the job document no longer exists.
+  Future<void> removeCachedJob(Job job) async {
+    final orderId = job.localOrderId;
+    if (orderId != null) {
+      final ownerUid = _currentUser?.uid;
+      if (ownerUid != null && ownerUid.isNotEmpty) {
+        await _localRepo.deleteJob(orderId, ownerUid);
+      }
+      _activeLocalJobs.removeWhere(
+          (cached) => cached.localOrderId == orderId || cached.id == job.id);
+    } else {
+      _activeLocalJobs.removeWhere((cached) => cached.id == job.id);
+    }
+    notifyListeners();
   }
 
   Future<void> updateJob(String jobId, Map<String, dynamic> updates) async {
     try {
-      await firestore.FirebaseFirestore.instance.collection('jobs').doc(jobId).update(updates);
+      await firestore.FirebaseFirestore.instance
+          .collection('jobs')
+          .doc(jobId)
+          .update(updates);
       notifyListeners();
     } catch (e) {
       log('[JobProvider] Error updating job: $e');
@@ -529,8 +631,10 @@ class JobProvider with ChangeNotifier {
   Future<List<String>> uploadJobImages(List<File> images) async {
     List<String> newUrls = [];
     for (var file in images) {
-      final String fileName = 'bills/${DateTime.now().millisecondsSinceEpoch}_${newUrls.length}.jpg';
-      final ref = firebase_storage.FirebaseStorage.instance.ref().child(fileName);
+      final String fileName =
+          'bills/${DateTime.now().millisecondsSinceEpoch}_${newUrls.length}.jpg';
+      final ref =
+          firebase_storage.FirebaseStorage.instance.ref().child(fileName);
       await ref.putFile(file);
       newUrls.add(await ref.getDownloadURL());
     }
@@ -572,8 +676,10 @@ class JobProvider with ChangeNotifier {
 
       if (index != -1) {
         jobToUpdate = sourceList[index];
-        final List<String> newDriverIds = driverIds ?? (driverId != null ? [driverId] : jobToUpdate.driverIds);
-        final String? newDriverId = newDriverIds.isNotEmpty ? newDriverIds.first : jobToUpdate.driverId;
+        final List<String> newDriverIds = driverIds ??
+            (driverId != null ? [driverId] : jobToUpdate.driverIds);
+        final String? newDriverId =
+            newDriverIds.isNotEmpty ? newDriverIds.first : jobToUpdate.driverId;
 
         final updatedJob = jobToUpdate.copyWith(
           isDepartureApproved: true,
@@ -585,29 +691,48 @@ class JobProvider with ChangeNotifier {
 
         sourceList[index] = updatedJob;
 
-        final assignedIndex = _driverAssignedJobs.indexWhere((j) => j.id == jobId);
+        // Save to Local SQLite
+        if (updatedJob.localOrderId != null) {
+          await _localRepo.updateOfflineAssignment(
+            updatedJob.localOrderId!,
+            true,
+            updatedJob.driverIds,
+            updatedJob.vehicleIds ?? [],
+            updatedJob.deliveryTeam.map((e) => e.toJson()).toList(),
+            _currentUser?.uid ?? '',
+          );
+        }
+
+        final assignedIndex =
+            _driverAssignedJobs.indexWhere((j) => j.id == jobId);
         if (assignedIndex != -1) {
           _driverAssignedJobs[assignedIndex] = updatedJob;
         } else {
-          final myUid = _currentUser?.uid;
-          if (myUid != null && newDriverIds.contains(myUid)) {
+          if (newDriverIds.any(_currentAssignmentIds.contains)) {
             _driverAssignedJobs.add(updatedJob);
             _localAssignedJobs.add(updatedJob);
-            _driverAssignedJobs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+            _driverAssignedJobs
+                .sort((a, b) => b.createdAt.compareTo(a.createdAt));
           }
         }
 
         notifyListeners();
       }
 
-      await firestore.FirebaseFirestore.instance.collection('jobs').doc(jobId).update(updates);
+      await firestore.FirebaseFirestore.instance
+          .collection('jobs')
+          .doc(jobId)
+          .update(updates);
 
       // GPS Status Update
       try {
         final jobCustomerName = jobToUpdate?.customer.name ?? 'ไม่ระบุชื่อ';
         String teamNames = '';
         if (jobToUpdate != null && jobToUpdate.deliveryTeam.isNotEmpty) {
-          final people = jobToUpdate.deliveryTeam.where((e) => e.type != 'vehicle').map((e) => e.name).toList();
+          final people = jobToUpdate.deliveryTeam
+              .where((e) => e.type != 'vehicle')
+              .map((e) => e.name)
+              .toList();
           if (people.isNotEmpty) teamNames = ' (${people.join(', ')})';
         }
 
@@ -615,14 +740,15 @@ class JobProvider with ChangeNotifier {
             .where((e) => e.type == 'car' || e.type == 'vehicle')
             .firstOrNull;
         final String vehicleNameDep = vehicleItemDep != null
-            ? (vehicleItemDep.licensePlate?.isNotEmpty == true ? vehicleItemDep.licensePlate! : vehicleItemDep.name)
+            ? (vehicleItemDep.name.trim().isNotEmpty
+                ? vehicleItemDep.name
+                : vehicleItemDep.licensePlate ?? 'ไม่ระบุรถ')
             : 'ไม่ระบุรถ';
 
-        await http.post(
-          Uri.parse('https://api.namecheap.work/api/v1/gps/update_job'),
-          headers: {'Content-Type': 'application/json'},
-          body: jsonEncode({'vehicle': vehicleNameDep, 'jobStatus': 'กำลังส่งของ: $jobCustomerName$teamNames'}),
-        ).timeout(const Duration(seconds: 3));
+        await PosApiService().postRaw('/gps/update_job', {
+          'vehicle': vehicleNameDep,
+          'jobStatus': 'กำลังส่งของ: $jobCustomerName$teamNames',
+        }).timeout(const Duration(seconds: 3));
       } catch (e) {
         log('[JobProvider] GPS status update failed (non-fatal): $e');
       }

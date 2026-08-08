@@ -108,18 +108,23 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   }
 
   void _showEditJobDialog(Job job) {
-    showEditJobDialog(context, job, (updates, newImages) => _performUpdateJob(context, job.id, updates, newImages));
+    showEditJobDialog(
+        context,
+        job,
+        (updates, newImages) =>
+            _performUpdateJob(context, job.id, updates, newImages));
   }
 
-  Future<void> _performUpdateJob(
-      BuildContext ctx, String jobId, Map<String, dynamic> updates, List<File> newImages) async {
+  Future<void> _performUpdateJob(BuildContext ctx, String jobId,
+      Map<String, dynamic> updates, List<File> newImages) async {
     final navigator = Navigator.of(ctx);
     final provider = Provider.of<JobProvider>(ctx, listen: false);
     try {
       if (newImages.isNotEmpty) {
         if (mounted) SnackbarUtils.showLeft(context, 'กำลังอัปโหลดรูปภาพ...');
         final newUrls = await provider.uploadJobImages(newImages);
-        final currentImages = List<String>.from(updates['bill_image_urls'] ?? []);
+        final currentImages =
+            List<String>.from(updates['bill_image_urls'] ?? []);
         updates['bill_image_urls'] = [...currentImages, ...newUrls];
       }
 
@@ -152,12 +157,25 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthenticationProvider>(context);
     final currentUser = authProvider.currentUser;
-    final masterDataProvider = Provider.of<MasterDataProvider>(context, listen: false);
+    final masterDataProvider =
+        Provider.of<MasterDataProvider>(context, listen: false);
 
-    final bool isHistory = widget.job.id.startsWith('HIST') || widget.job.id.startsWith('history_') || widget.job.id.startsWith('#HIST');
-    
+    final bool isHistory = widget.job.id.startsWith('HIST') ||
+        widget.job.id.startsWith('history_') ||
+        widget.job.id.startsWith('#HIST');
+    final bool isLocal = widget.job.id.startsWith('local_');
+
+    String titleText;
+    if (isHistory) {
+      titleText = 'งาน ${widget.job.id.replaceAll('#', '')}';
+    } else if (isLocal) {
+      titleText = 'งาน ${widget.job.localOrderId ?? "(ออฟไลน์)"}';
+    } else {
+      titleText = 'งาน #${widget.job.id.substring(0, 4).toUpperCase()}';
+    }
+
     final appBar = AppBar(
-      title: Text(isHistory ? 'งาน ${widget.job.id.replaceAll('#', '')}' : 'งาน #${widget.job.id.substring(0, 4).toUpperCase()}'),
+      title: Text(titleText),
       actions: [
         // Delete button for Admin
         if (authProvider.isUserAdmin && !authProvider.isUserDriver)
@@ -174,17 +192,21 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       ],
     );
 
-    if (isHistory) {
+    if (isHistory || isLocal) {
       return Scaffold(
         appBar: appBar,
-        body: _buildJobContent(widget.job, currentUser, masterDataProvider, authProvider),
+        body: _buildJobContent(
+            widget.job, currentUser, masterDataProvider, authProvider),
       );
     }
 
     return Scaffold(
       appBar: appBar,
       body: StreamBuilder<DocumentSnapshot>(
-        stream: FirebaseFirestore.instance.collection('jobs').doc(widget.job.id).snapshots(),
+        stream: FirebaseFirestore.instance
+            .collection('jobs')
+            .doc(widget.job.id)
+            .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));
@@ -195,38 +217,71 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
           final jobSnapshot = snapshot.data!;
           if (!jobSnapshot.exists) {
+            // A cached job can outlive a Firestore deletion. Remove it now so
+            // it cannot keep reappearing in the active-job list.
+            if (widget.job.localOrderId != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  Provider.of<JobProvider>(context, listen: false)
+                      .removeCachedJob(widget.job);
+                }
+              });
+            }
             if (widget.job.status == 'completed') {
-               return _buildJobContent(widget.job, currentUser, masterDataProvider, authProvider);
+              return _buildJobContent(
+                  widget.job, currentUser, masterDataProvider, authProvider);
             }
             return const Center(child: Text('ไม่พบงานนี้แล้ว (อาจถูกลบ)'));
           }
-          
-          final currentJob = Job.fromFirestore(jobSnapshot);
-          return _buildJobContent(currentJob, currentUser, masterDataProvider, authProvider);
+
+          // Merge Firebase realtime status with SQLite local items/orderId
+          final firestoreJob = Job.fromFirestore(jobSnapshot);
+          final currentJob = firestoreJob.copyWith(
+            items: widget.job.items.isNotEmpty
+                ? widget.job.items
+                : firestoreJob.items,
+            localOrderId: widget.job.localOrderId ?? firestoreJob.localOrderId,
+          );
+
+          return _buildJobContent(
+              currentJob, currentUser, masterDataProvider, authProvider);
         },
       ),
     );
   }
 
-  Widget _buildJobContent(Job currentJob, dynamic currentUser, MasterDataProvider masterDataProvider, AuthenticationProvider authProvider) {
-    final hasDriver = currentJob.driverId != null && currentJob.driverId!.isNotEmpty;
-    final isMyJob = currentJob.driverId == currentUser?.uid ||
-        (currentJob.driverIds.contains(currentUser?.uid)) ||
-        (currentJob.deliveryTeam.any((m) => m.id == currentUser?.uid));
+  Widget _buildJobContent(
+      Job currentJob,
+      dynamic currentUser,
+      MasterDataProvider masterDataProvider,
+      AuthenticationProvider authProvider) {
+    final hasDriver =
+        currentJob.driverId != null && currentJob.driverId!.isNotEmpty;
+    final currentUserIds = <String>{
+      if (currentUser?.uid?.isNotEmpty == true) currentUser.uid,
+      if (currentUser?.employeeId?.isNotEmpty == true) currentUser.employeeId,
+    };
+    final isMyJob = (currentJob.driverId != null &&
+            currentUserIds.contains(currentJob.driverId)) ||
+        currentJob.driverIds.any(currentUserIds.contains) ||
+        currentJob.deliveryTeam.any((m) => currentUserIds.contains(m.id));
     final isCompleted = currentJob.status == 'completed';
     final isAdmin = authProvider.isUserAdmin;
     final isRequester = authProvider.isUserRequester;
-    final isHr = authProvider.isUserHr;
-    final canApprove = isAdmin || isRequester || isHr;
-    final isPickup = currentJob.jobType == 'pickup' || currentJob.jobType == 'customer_pickup';
+    final isDriver = authProvider.isUserDriver;
+    final canApprove = authProvider.canApproveJobDeparture;
+    final isPickup = currentJob.jobType == 'pickup' ||
+        currentJob.jobType == 'customer_pickup';
 
     String? driverNameDisplay;
     if (isCompleted || hasDriver) {
-      final driverInTeam = currentJob.deliveryTeam.firstWhereOrNull((d) => d.type == 'driver' || d.type == 'staff');
+      final driverInTeam = currentJob.deliveryTeam
+          .firstWhereOrNull((d) => d.type == 'driver' || d.type == 'staff');
       if (driverInTeam != null) {
         driverNameDisplay = driverInTeam.name;
       } else {
-        final d = masterDataProvider.deliverers.firstWhereOrNull((d) => d.id == currentJob.driverId);
+        final d = masterDataProvider.deliverers
+            .firstWhereOrNull((d) => d.id == currentJob.driverId);
         driverNameDisplay = d?.name;
       }
     }
@@ -244,7 +299,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           ),
 
           // Show Map Button for both active and completed jobs
-          _buildMapButton(currentJob.customer.address, currentJob.destinationLocation),
+          _buildMapButton(
+              currentJob.customer.address, currentJob.destinationLocation),
 
           const SizedBox(height: 16),
 
@@ -253,7 +309,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           Card(
             child: ListTile(
               leading: const Icon(Icons.person, color: Colors.blue),
-              title: Text(currentJob.customer.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              title: Text(currentJob.customer.name,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -266,7 +323,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           const SizedBox(height: 16),
 
           // 3. รายละเอียดงาน & บิล
-          if ((currentJob.details != null && currentJob.details!.isNotEmpty) || currentJob.billImageUrl != null) ...[
+          if ((currentJob.details != null && currentJob.details!.isNotEmpty) ||
+              currentJob.billImageUrl != null) ...[
             _buildSectionTitle('รายละเอียดงาน'),
             JobDetailItems(job: currentJob, onOpenImage: _openImage),
             const SizedBox(height: 24),
@@ -274,23 +332,29 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
           // 4. Proof & Team
           if (isCompleted) ...[
-            if (currentJob.proofImage != null || currentJob.proofLocation != null) ...[
-              _buildSectionTitle('หลักฐานการส่งงาน (Proof)'),
-              _buildProofSection(currentJob),
-              const SizedBox(height: 24),
-            ],
+            _buildSectionTitle('หลักฐานการส่งงาน (Proof)'),
+            _buildProofSection(currentJob),
+            const SizedBox(height: 24),
             _buildSectionTitle('ทีมจัดส่ง & รถที่ใช้'),
             _buildDeliveryTeamList(currentJob.deliveryTeam),
             const SizedBox(height: 24),
           ],
 
           // 5. Action Buttons
-          if ((isAdmin || isRequester || isMyJob) && !isPickup)
-            if (!isCompleted && currentJob.isDepartureApproved)
-              _buildCompleteButton(currentJob),
+          // A driver assigned to this job must be able to submit proof and
+          // complete it even when departure approval was missed. Previously
+          // the approval check hid this action entirely for drivers.
+          if ((isAdmin || isRequester || isMyJob) && !isPickup && !isCompleted)
+            _buildCompleteButton(
+              currentJob,
+              canCompleteWithoutDepartureApproval: isDriver && isMyJob,
+            ),
 
-          // 6. Admin Approval Button
-          if (canApprove && !currentJob.isDepartureApproved && !isCompleted && !isPickup)
+          // 6. Departure approval button (Admin or Requester)
+          if (canApprove &&
+              !currentJob.isDepartureApproved &&
+              !isCompleted &&
+              !isPickup)
             _buildApprovalButton(masterDataProvider),
         ],
       ),
@@ -318,13 +382,23 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   Future<void> _showApprovalDialog(MasterDataProvider provider) async {
     List<UserModel> availableStaff = [];
+    String? driverLoadError;
     try {
       availableStaff = await UserService().getDrivers();
     } catch (e) {
-      // If error, empty list
+      driverLoadError = e.toString();
     }
 
     if (!mounted) return;
+
+    if (driverLoadError != null) {
+      SnackbarUtils.showLeft(
+        context,
+        'ต้องเข้าสู่ระบบ POS ใหม่ก่อนจึงจะโหลดรายชื่อพนักงานได้',
+        isError: true,
+      );
+      return;
+    }
 
     await showApproveDepartureDialog(
       context: context,
@@ -370,15 +444,19 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         (method == null || method.isEmpty || method == 'credit');
   }
 
-  Widget _buildCompleteButton(Job job) {
+  Widget _buildCompleteButton(
+    Job job, {
+    bool canCompleteWithoutDepartureApproval = false,
+  }) {
     final bool isApproved = job.isDepartureApproved;
     final bool hasCod = _isCodJob(job);
+    final bool canComplete = isApproved || canCompleteWithoutDepartureApproval;
 
     return SizedBox(
       width: double.infinity,
       height: 55,
       child: ElevatedButton.icon(
-        onPressed: !isApproved
+        onPressed: !canComplete
             ? null
             : () {
                 Navigator.push(
@@ -388,14 +466,14 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               },
         icon: Icon(hasCod ? Icons.payments : Icons.check_circle_outline),
         label: Text(
-            !isApproved
+            !canComplete
                 ? 'รอ Admin อนุมัติการออกรถ'
                 : hasCod
                     ? 'ปิดงาน + รับเงินสด (COD)'
                     : 'ปิดงาน / ส่งหลักฐาน',
             style: const TextStyle(fontSize: 18)),
         style: ElevatedButton.styleFrom(
-            backgroundColor: isApproved
+            backgroundColor: canComplete
                 ? (hasCod ? Colors.orange.shade700 : Colors.red)
                 : Colors.grey,
             foregroundColor: Colors.white),
@@ -482,38 +560,65 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
 
   Widget _buildProofSection(Job job) {
     final proofLocation = job.proofLocation;
+    final proofImage = job.proofImage ?? job.billImageUrl;
+    final hasImage = proofImage != null && proofImage.trim().isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (job.proofImage != null && job.proofImage!.trim().isNotEmpty)
+        if (hasImage)
           GestureDetector(
-            onTap: () => _openImage(job.proofImage!),
+            onTap: () => _openImage(proofImage),
             child: Stack(
               alignment: Alignment.center,
               children: [
-                Image.network(
-                  job.proofImage!,
-                  height: 200, 
-                  width: double.infinity, 
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    height: 200,
-                    width: double.infinity,
-                    color: Colors.grey[300],
-                    child: const Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.broken_image, size: 50, color: Colors.grey),
-                        SizedBox(height: 8),
-                        Text('รูปภาพไม่สมบูรณ์', style: TextStyle(color: Colors.grey)),
-                      ],
-                    ),
-                  ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: proofImage.startsWith('http://') ||
+                          proofImage.startsWith('https://')
+                      ? Image.network(
+                          proofImage,
+                          height: 200,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              _buildProofErrorWidget(),
+                        )
+                      : (File(proofImage).existsSync()
+                          ? Image.file(
+                              File(proofImage),
+                              height: 200,
+                              width: double.infinity,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _buildProofErrorWidget(),
+                            )
+                          : _buildProofErrorWidget()),
                 ),
                 const Icon(Icons.zoom_in,
                     color: Colors.white,
                     size: 40,
                     shadows: [Shadow(blurRadius: 5, color: Colors.black)]),
+              ],
+            ),
+          )
+        else
+          Container(
+            height: 120,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.image_not_supported,
+                    size: 40, color: Colors.grey.shade400),
+                const SizedBox(height: 8),
+                Text('ไม่มีรูปหลักฐาน',
+                    style: TextStyle(color: Colors.grey.shade600)),
               ],
             ),
           ),
@@ -526,6 +631,22 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 'ดูจุดที่ส่งงาน (${proofLocation.latitude.toStringAsFixed(5)}, ${proofLocation.longitude.toStringAsFixed(5)})'),
           ),
       ],
+    );
+  }
+
+  Widget _buildProofErrorWidget() {
+    return Container(
+      height: 200,
+      width: double.infinity,
+      color: Colors.grey[300],
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.broken_image, size: 50, color: Colors.grey),
+          SizedBox(height: 8),
+          Text('รูปภาพไม่สมบูรณ์', style: TextStyle(color: Colors.grey)),
+        ],
+      ),
     );
   }
 

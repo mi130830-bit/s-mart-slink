@@ -11,7 +11,7 @@ import 'dart:developer';
 
 class AttendanceScreen extends StatefulWidget {
   final bool showLogoutButton;
-  
+
   const AttendanceScreen({super.key, this.showLogoutButton = false});
 
   @override
@@ -24,6 +24,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool _isLoading = true;
   String _timeString = '';
   Timer? _timer;
+  Timer? _autoPollTimer;
+  bool _isPollingServer = false;
   // พิกัดร้านโหลดจาก Firestore config/mobile_app โดย AttendanceService
   // (ไม่ต้อง hardcode ที่นี่อีกต่อไป)
 
@@ -31,7 +33,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   void initState() {
     super.initState();
     _timeString = _formatDateTime(DateTime.now());
-    _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) => _getTime());
+    _timer =
+        Timer.periodic(const Duration(seconds: 1), (Timer t) => _getTime());
+    // POS writes attendance directly to the backend, so refresh the local
+    // Isar cache regularly while this screen is open.
+    _autoPollTimer =
+        Timer.periodic(const Duration(seconds: 15), (_) => _pollServer());
 
     // Safety fallback: ป้องกันกรณีหมุนค้างนานเกิน 10 วินาที ให้ปลดหมุนและแจ้งเตือนทันที
     Timer(const Duration(seconds: 10), () {
@@ -44,7 +51,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     // ถ้า Auth โหลดเสร็จแล้ว ให้เรียก _loadTodayLog() ทันที (ไม่ค้างรอถ้า currentUser == null)
     Future.microtask(() {
       if (!mounted) return;
-      final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
+      final authProvider =
+          Provider.of<AuthenticationProvider>(context, listen: false);
       if (authProvider.isLoading) {
         authProvider.addListener(_onAuthReady);
       } else {
@@ -54,10 +62,25 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   void _onAuthReady() {
-    final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
+    final authProvider =
+        Provider.of<AuthenticationProvider>(context, listen: false);
     if (!authProvider.isLoading) {
       authProvider.removeListener(_onAuthReady);
       _loadTodayLog();
+    }
+  }
+
+  Future<void> _pollServer() async {
+    if (!mounted || _isPollingServer) return;
+    final user =
+        Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
+    if (user == null) return;
+
+    _isPollingServer = true;
+    try {
+      await _service.fetchTodayLogFromServer(user.id);
+    } finally {
+      _isPollingServer = false;
     }
   }
 
@@ -77,30 +100,34 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Future<void> _loadTodayLog() async {
     if (!mounted) return;
-    final user = Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
+    final user =
+        Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
     if (user != null) {
       _logSub?.cancel();
-      _logSub = _service.todayLogStream(user.id).listen(
-        (logData) {
-          if (mounted) {
-            setState(() {
-              _todayLog = logData;
-              _isLoading = false;
-            });
-          }
-        },
-        onError: (e) {
-          log('AttendanceScreen: Error loading today log stream: $e');
-          if (mounted) {
-            setState(() => _isLoading = false);
-            SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาดในการดึงข้อมูล: ${e.toString()}', isError: true);
-          }
+      _logSub = _service.todayLogStream(user.id).listen((logData) {
+        if (mounted) {
+          setState(() {
+            _todayLog = logData;
+            _isLoading = false;
+          });
         }
-      );
+      }, onError: (e) {
+        log('AttendanceScreen: Error loading today log stream: $e');
+        if (mounted) {
+          setState(() => _isLoading = false);
+          SnackbarUtils.showLeft(
+              context, 'เกิดข้อผิดพลาดในการดึงข้อมูล: ${e.toString()}',
+              isError: true);
+        }
+      });
+      // Subscribe first so the write below immediately updates the UI, then
+      // fetch the authoritative record from POS instead of waiting for a tap.
+      await _pollServer();
     } else {
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarUtils.showLeft(context, 'ไม่พบข้อมูลผู้ใช้ กรุณาล็อกอินใหม่', isError: true);
+        SnackbarUtils.showLeft(context, 'ไม่พบข้อมูลผู้ใช้ กรุณาล็อกอินใหม่',
+            isError: true);
       }
     }
   }
@@ -112,7 +139,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('กรุณาเปิด GPS (Location Services)')));
+      scaffoldMessenger.showSnackBar(
+          const SnackBar(content: Text('กรุณาเปิด GPS (Location Services)')));
       return null;
     }
 
@@ -120,15 +148,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
-        scaffoldMessenger.showSnackBar(const SnackBar(content: Text('ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง')));
+        scaffoldMessenger.showSnackBar(
+            const SnackBar(content: Text('ไม่ได้รับอนุญาตให้เข้าถึงตำแหน่ง')));
         return null;
       }
     }
-    
+
     if (permission == LocationPermission.deniedForever) {
-      scaffoldMessenger.showSnackBar(const SnackBar(content: Text('สิทธิ์ถูกปฏิเสธถาวร กรุณาไปเปิดในตั้งค่าระบบ')));
+      scaffoldMessenger.showSnackBar(const SnackBar(
+          content: Text('สิทธิ์ถูกปฏิเสธถาวร กรุณาไปเปิดในตั้งค่าระบบ')));
       return null;
-    } 
+    }
 
     // ดึงพิกัดร้านจาก Firestore (cache 30 นาที)
     scaffoldMessenger.showSnackBar(const SnackBar(
@@ -143,14 +173,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     Position position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
     );
-    
+
     double distanceInMeters = Geolocator.distanceBetween(
-      storeLat, storeLng, position.latitude, position.longitude
-    );
+        storeLat, storeLng, position.latitude, position.longitude);
 
     if (distanceInMeters > maxDistance) {
       scaffoldMessenger.showSnackBar(SnackBar(
-        content: Text('คุณไม่ได้อยู่ที่ร้าน! (ระยะห่าง ${distanceInMeters.toStringAsFixed(0)} เมตร, สูงสุด ${maxDistance.toStringAsFixed(0)} เมตร)'),
+        content: Text(
+            'คุณไม่ได้อยู่ที่ร้าน! (ระยะห่าง ${distanceInMeters.toStringAsFixed(0)} เมตร, สูงสุด ${maxDistance.toStringAsFixed(0)} เมตร)'),
         duration: const Duration(seconds: 4),
       ));
       return null;
@@ -168,7 +198,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   // }
 
   Future<void> _handleCheckIn() async {
-    final user = Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
+    final user =
+        Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
     if (user == null) return;
 
     final pos = await _checkLocation();
@@ -192,13 +223,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e', isError: true);
+        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e',
+            isError: true);
       }
     }
   }
 
   Future<void> _handleCheckOut() async {
-    final user = Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
+    final user =
+        Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
     if (user == null || _todayLog == null) return;
 
     final pos = await _checkLocation();
@@ -211,13 +244,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e', isError: true);
+        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e',
+            isError: true);
       }
     }
   }
 
   Future<void> _handleTempOut() async {
-    final user = Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
+    final user =
+        Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
     if (user == null || _todayLog == null) return;
 
     final pos = await _checkLocation();
@@ -230,13 +265,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e', isError: true);
+        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e',
+            isError: true);
       }
     }
   }
 
   Future<void> _handleBackToWork() async {
-    final user = Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
+    final user =
+        Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
     if (user == null || _todayLog == null) return;
 
     final pos = await _checkLocation();
@@ -249,7 +286,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e', isError: true);
+        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e',
+            isError: true);
       }
     }
   }
@@ -257,6 +295,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _autoPollTimer?.cancel();
     _logSub?.cancel();
     // ล้าง listener กัน memory leak ถ้า widget ถูก dispose ก่อน auth เสร็จ
     try {
@@ -275,14 +314,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'ซิงค์ข้อมูลล่าสุด',
-            onPressed: () {
+            onPressed: () async {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('กำลังดึงข้อมูลล่าสุด...'),
                   duration: Duration(seconds: 1),
                 ),
               );
-              _loadTodayLog();
+              await _pollServer();
             },
           ),
           if (widget.showLogoutButton)
@@ -293,102 +332,166 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             ),
         ],
       ),
-      body: _isLoading 
-        ? const Center(child: CircularProgressIndicator())
-        : Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(DateFormat('EEEE, d MMMM yyyy').format(DateTime.now()), style: const TextStyle(fontSize: 18)),
-              const SizedBox(height: 10),
-              Text(_timeString, style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 40),
-              
-              if (_todayLog == null || _todayLog!.checkInTime == null)
-                ElevatedButton.icon(
-                  onPressed: _handleCheckIn,
-                  icon: const Icon(Icons.login, size: 32),
-                  label: const Text('กดเข้างาน', style: TextStyle(fontSize: 24)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: () async {
+                await _pollServer();
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                          DateFormat('EEEE, d MMMM yyyy')
+                              .format(DateTime.now()),
+                          style: const TextStyle(fontSize: 18)),
+                      const SizedBox(height: 10),
+                      Text(_timeString,
+                          style: const TextStyle(
+                              fontSize: 48, fontWeight: FontWeight.bold)),
+                      if (_todayLog != null && !_todayLog!.isSynced) ...[
+                        const SizedBox(height: 16),
+                        const Card(
+                          color: Color(0xFFFFF3CD),
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 12),
+                            child: Text(
+                              'บันทึกในเครื่องแล้ว กำลังรอซิงก์กับ POS',
+                              style: TextStyle(color: Color(0xFF664D03)),
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 40),
+                      if (_todayLog == null || _todayLog!.checkInTime == null)
+                        ElevatedButton.icon(
+                          onPressed: _handleCheckIn,
+                          icon: const Icon(Icons.login, size: 32),
+                          label: const Text('กดเข้างาน',
+                              style: TextStyle(fontSize: 24)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 40, vertical: 20),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30)),
+                          ),
+                        )
+                      else if (_todayLog!.checkOutTime == null)
+                        Column(
+                          children: [
+                            Text(
+                                'เข้างานเมื่อ: ${_formatDateTime(_todayLog!.checkInTime!)}',
+                                style: const TextStyle(
+                                    fontSize: 18,
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold)),
+                            if (_todayLog!.tempOutTime != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                  'ออกชั่วคราวเมื่อ: ${_formatDateTime(_todayLog!.tempOutTime!)}',
+                                  style: const TextStyle(
+                                      fontSize: 18,
+                                      color: Colors.orange,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                            if (_todayLog!.backToWorkTime != null) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                  'กลับเข้างานเมื่อ: ${_formatDateTime(_todayLog!.backToWorkTime!)}',
+                                  style: const TextStyle(
+                                      fontSize: 18,
+                                      color: Colors.green,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                            const SizedBox(height: 40),
+                            if (_todayLog!.tempOutTime == null) ...[
+                              ElevatedButton.icon(
+                                onPressed: _handleTempOut,
+                                icon:
+                                    const Icon(Icons.directions_run, size: 32),
+                                label: const Text('ออกชั่วคราว',
+                                    style: TextStyle(fontSize: 24)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 40, vertical: 20),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(30)),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                            ] else if (_todayLog!.backToWorkTime == null) ...[
+                              ElevatedButton.icon(
+                                onPressed: _handleBackToWork,
+                                icon:
+                                    const Icon(Icons.keyboard_return, size: 32),
+                                label: const Text('กลับเข้างาน',
+                                    style: TextStyle(fontSize: 24)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 40, vertical: 20),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(30)),
+                                ),
+                              ),
+                              const SizedBox(height: 20),
+                            ],
+                            ElevatedButton.icon(
+                              onPressed: _handleCheckOut,
+                              icon: const Icon(Icons.logout, size: 32),
+                              label: const Text('กดออกงาน',
+                                  style: TextStyle(fontSize: 24)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 40, vertical: 20),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30)),
+                              ),
+                            ),
+                          ],
+                        )
+                      else
+                        Column(
+                          children: [
+                            const Icon(Icons.check_circle,
+                                color: Colors.green, size: 64),
+                            const SizedBox(height: 10),
+                            const Text('วันนี้คุณลงเวลาครบแล้ว',
+                                style: TextStyle(
+                                    fontSize: 20, fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 10),
+                            Text(
+                                'เข้างาน: ${_formatDateTime(_todayLog!.checkInTime!)}',
+                                style: const TextStyle(fontSize: 16)),
+                            if (_todayLog!.tempOutTime != null)
+                              Text(
+                                  'ออกชั่วคราว: ${_formatDateTime(_todayLog!.tempOutTime!)}',
+                                  style: const TextStyle(fontSize: 16)),
+                            if (_todayLog!.backToWorkTime != null)
+                              Text(
+                                  'กลับเข้างาน: ${_formatDateTime(_todayLog!.backToWorkTime!)}',
+                                  style: const TextStyle(fontSize: 16)),
+                            Text(
+                                'ออกงาน: ${_formatDateTime(_todayLog!.checkOutTime!)}',
+                                style: const TextStyle(fontSize: 16)),
+                          ],
+                        )
+                    ],
                   ),
-                )
-              else if (_todayLog!.checkOutTime == null)
-                Column(
-                  children: [
-                    Text('เข้างานเมื่อ: ${_formatDateTime(_todayLog!.checkInTime!)}', style: const TextStyle(fontSize: 18, color: Colors.green, fontWeight: FontWeight.bold)),
-                    if (_todayLog!.tempOutTime != null) ...[
-                      const SizedBox(height: 10),
-                      Text('ออกชั่วคราวเมื่อ: ${_formatDateTime(_todayLog!.tempOutTime!)}', style: const TextStyle(fontSize: 18, color: Colors.orange, fontWeight: FontWeight.bold)),
-                    ],
-                    if (_todayLog!.backToWorkTime != null) ...[
-                      const SizedBox(height: 10),
-                      Text('กลับเข้างานเมื่อ: ${_formatDateTime(_todayLog!.backToWorkTime!)}', style: const TextStyle(fontSize: 18, color: Colors.green, fontWeight: FontWeight.bold)),
-                    ],
-                    const SizedBox(height: 40),
-                    
-                    if (_todayLog!.tempOutTime == null) ...[
-                      ElevatedButton.icon(
-                        onPressed: _handleTempOut,
-                        icon: const Icon(Icons.directions_run, size: 32),
-                        label: const Text('ออกชั่วคราว', style: TextStyle(fontSize: 24)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.orange,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ] else if (_todayLog!.backToWorkTime == null) ...[
-                      ElevatedButton.icon(
-                        onPressed: _handleBackToWork,
-                        icon: const Icon(Icons.keyboard_return, size: 32),
-                        label: const Text('กลับเข้างาน', style: TextStyle(fontSize: 24)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
-
-                    ElevatedButton.icon(
-                      onPressed: _handleCheckOut,
-                      icon: const Icon(Icons.logout, size: 32),
-                      label: const Text('กดออกงาน', style: TextStyle(fontSize: 24)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-                      ),
-                    ),
-                  ],
-                )
-              else
-                Column(
-                  children: [
-                    const Icon(Icons.check_circle, color: Colors.green, size: 64),
-                    const SizedBox(height: 10),
-                    const Text('วันนี้คุณลงเวลาครบแล้ว', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 10),
-                    Text('เข้างาน: ${_formatDateTime(_todayLog!.checkInTime!)}', style: const TextStyle(fontSize: 16)),
-                    if (_todayLog!.tempOutTime != null)
-                      Text('ออกชั่วคราว: ${_formatDateTime(_todayLog!.tempOutTime!)}', style: const TextStyle(fontSize: 16)),
-                    if (_todayLog!.backToWorkTime != null)
-                      Text('กลับเข้างาน: ${_formatDateTime(_todayLog!.backToWorkTime!)}', style: const TextStyle(fontSize: 16)),
-                    Text('ออกงาน: ${_formatDateTime(_todayLog!.checkOutTime!)}', style: const TextStyle(fontSize: 16)),
-                  ],
-                )
-            ],
-          ),
-        ),
+                ),
+              ),
+            ),
     );
   }
 }

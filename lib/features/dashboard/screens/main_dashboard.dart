@@ -7,7 +7,8 @@ import 'package:s_link/features/pos/screens/shop_menu_screen.dart';
 import 'package:s_link/features/jobs/screens/admin_job_list_screen.dart';
 import 'package:s_link/features/dashboard/screens/requester_view.dart';
 import 'package:s_link/features/dashboard/screens/driver_view.dart';
-import 'package:s_link/features/hr/screens/attendance_screen.dart' as s_link_attendance;
+import 'package:s_link/features/hr/screens/attendance_screen.dart'
+    as s_link_attendance;
 import 'package:s_link/features/settings/screens/driver_qr_screen.dart';
 import 'package:s_link/features/alerts/screens/stock_alert_screen.dart';
 import 'package:s_link/features/shop_log/screens/work_log_history_screen.dart';
@@ -63,7 +64,8 @@ class MainDashboard extends StatelessWidget {
                 GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: MediaQuery.of(context).size.width > 600 ? 3 : 2,
+                  crossAxisCount:
+                      MediaQuery.of(context).size.width > 600 ? 3 : 2,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
                   childAspectRatio: 1.1,
@@ -75,7 +77,8 @@ class MainDashboard extends StatelessWidget {
                         title: 'หน้าร้าน (Shop)',
                         icon: Icons.storefront,
                         color: Colors.deepOrange,
-                        onTap: () => _navigateTo(context, const ShopMenuScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const ShopMenuScreen()),
                       ),
 
                     // 2. จัดการงานจัดส่ง (Logistics)
@@ -83,7 +86,7 @@ class MainDashboard extends StatelessWidget {
                       _buildMenuCard(
                         context,
                         title: 'จัดการงานจัดส่ง',
-                        subtitle: isRequester 
+                        subtitle: isRequester
                             ? 'รอส่ง, ส่งแล้ว, ของหมด'
                             : (isDriver ? 'ส่งของ, รับเอง, เช็คของ' : null),
                         icon: Icons.local_shipping,
@@ -106,7 +109,8 @@ class MainDashboard extends StatelessWidget {
                         title: 'ลงเวลาเข้างาน',
                         icon: Icons.fingerprint,
                         color: Colors.teal,
-                        onTap: () => _navigateTo(context, const s_link_attendance.AttendanceScreen()),
+                        onTap: () => _navigateTo(context,
+                            const s_link_attendance.AttendanceScreen()),
                       ),
 
                     // 4. QR รับเงิน (Receive Money)
@@ -116,17 +120,19 @@ class MainDashboard extends StatelessWidget {
                         title: 'QR รับเงิน',
                         icon: Icons.qr_code_2,
                         color: Colors.deepPurple,
-                        onTap: () => _navigateTo(context, const DriverQrScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const DriverQrScreen()),
                       ),
 
                     // 5. สินค้าใกล้หมดสต็อก (Stock Alerts)
-                    if (isAdmin || isRequester)
+                    if (authProvider.canManageStockAlerts)
                       _buildMenuCard(
                         context,
                         title: 'สินค้าใกล้หมดสต็อก',
                         icon: Icons.warning_amber_rounded,
                         color: Colors.red,
-                        onTap: () => _navigateTo(context, const StockAlertScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const StockAlertScreen()),
                       ),
 
                     // 6. ประวัติงานร้าน (Shop Work Logs)
@@ -136,7 +142,8 @@ class MainDashboard extends StatelessWidget {
                         title: 'ประวัติงานร้าน',
                         icon: Icons.cleaning_services,
                         color: Colors.purple,
-                        onTap: () => _navigateTo(context, const WorkLogHistoryScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const WorkLogHistoryScreen()),
                       ),
 
                     // 7. สถิติคนขับ (Driver Stats)
@@ -146,7 +153,8 @@ class MainDashboard extends StatelessWidget {
                         title: 'สถิติคนขับ',
                         icon: Icons.bar_chart,
                         color: Colors.blueAccent,
-                        onTap: () => _navigateTo(context, const DriverStatsScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const DriverStatsScreen()),
                       ),
 
                     // 8. อนุมัติวันลา (Manage Leave)
@@ -156,7 +164,8 @@ class MainDashboard extends StatelessWidget {
                         title: 'อนุมัติวันลา',
                         icon: Icons.fact_check,
                         color: Colors.blue,
-                        onTap: () => _navigateTo(context, const AdminLeaveManagementScreen()),
+                        onTap: () => _navigateTo(
+                            context, const AdminLeaveManagementScreen()),
                       ),
 
                     // 9. เข้างานแทน (Override Attendance)
@@ -166,7 +175,8 @@ class MainDashboard extends StatelessWidget {
                         title: 'เข้างานแทน',
                         icon: Icons.co_present,
                         color: Colors.orange,
-                        onTap: () => _navigateTo(context, const HrOverrideAttendanceScreen()),
+                        onTap: () => _navigateTo(
+                            context, const HrOverrideAttendanceScreen()),
                       ),
 
                     // 10. เบิกเงินและอนุมัติ (Advance Money)
@@ -176,7 +186,8 @@ class MainDashboard extends StatelessWidget {
                         title: 'เบิกเงินและอนุมัติ',
                         icon: Icons.request_quote,
                         color: Colors.green,
-                        onTap: () => _navigateTo(context, const HrAdvanceMoneyScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const HrAdvanceMoneyScreen()),
                       ),
 
                     // 11. ตั้งค่า (Settings)
@@ -186,7 +197,8 @@ class MainDashboard extends StatelessWidget {
                         title: 'ตั้งค่า (Settings)',
                         icon: Icons.settings,
                         color: Colors.grey.shade700,
-                        onTap: () => _navigateTo(context, const SettingsScreen()),
+                        onTap: () =>
+                            _navigateTo(context, const SettingsScreen()),
                       ),
                   ],
                 ),
@@ -202,7 +214,8 @@ class MainDashboard extends StatelessWidget {
     Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   }
 
-  Widget _buildMenuCard(BuildContext context, {
+  Widget _buildMenuCard(
+    BuildContext context, {
     required String title,
     String? subtitle,
     required IconData icon,

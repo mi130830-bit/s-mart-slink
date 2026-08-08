@@ -14,11 +14,11 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart'; // [NEW]
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-import 'package:sqflite/sqflite.dart';
 
 import '../../firebase_options.dart';
 import '../config/app_constants.dart';
 import 'notification_service.dart';
+import 'sync_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -88,6 +88,13 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         payload: message.data.toString(),
       );
       log('Background Notification Shown: $title');
+
+      try {
+        await SyncService().syncJobsDown();
+        log('Background job sync triggered successfully');
+      } catch (syncError) {
+        log('Background job sync failed: $syncError');
+      }
     } catch (e) {
       log('Error showing background notification: $e');
     }
@@ -171,6 +178,9 @@ class StartupService {
           if (message.notification != null) {
             _showNotification(message);
           }
+
+          // Trigger data sync whenever a push is received
+          SyncService().syncJobsDown();
         });
 
         FirebaseMessaging.onBackgroundMessage(

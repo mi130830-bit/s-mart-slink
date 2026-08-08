@@ -24,19 +24,19 @@ class JobStatusCard extends StatelessWidget {
     final bool isPickup = job.jobType == 'pickup' || job.jobType == 'customer_pickup';
 
     if (isCompleted) {
-      cardColor = Colors.grey;
+      cardColor = Colors.grey.shade800;
       text = 'ส่งสำเร็จเรียบร้อย';
       icon = Icons.check_circle;
     } else if (isPickup) {
-      cardColor = Colors.purple;
+      cardColor = Colors.purple.shade800;
       text = (job.details?.isNotEmpty == true) ? job.details! : 'งานรับสินค้าที่ร้าน';
       icon = Icons.storefront;
     } else if (!job.isDepartureApproved) {
-      cardColor = Colors.purple;
+      cardColor = Colors.purple.shade800;
       text = 'รอแอดมินอนุมัติออกส่ง (กำลังขึ้นของ)';
       icon = Icons.hourglass_top;
     } else {
-      cardColor = Colors.blue;
+      cardColor = Colors.blue.shade800;
       text = 'กำลังดำเนินการโดย: ${driverName ?? "คนขับรถ"}';
       icon = Icons.local_shipping;
     }

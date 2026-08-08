@@ -13,7 +13,6 @@ import 'package:s_link/features/hr/models/shop_work_log_isar.dart';
 import 'package:s_link/services/isar_service.dart';
 
 class AlertLogProvider with ChangeNotifier {
-  final AlertLogService _alertLogService;
   final ShortageRepository _shortageRepository = ShortageRepository();
 
   StreamSubscription? _allWorkLogsSubscription;
@@ -30,7 +29,7 @@ class AlertLogProvider with ChangeNotifier {
   // Timer for polling MySQL (Optional, to mimic Firestore Stream)
   Timer? _pollingTimer;
 
-  AlertLogProvider(this._alertLogService);
+  AlertLogProvider(AlertLogService _);
 
   void startListeningToAlertsAndLogs(String? role) {
     // ปิดของเก่าก่อนเสมอ เพื่อป้องกัน Memory Leak หรือ Listener ซ้อนทับ

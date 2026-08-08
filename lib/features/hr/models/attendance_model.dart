@@ -16,6 +16,9 @@ class AttendanceLog {
   final double? backToWorkLng;
   final String status;
   final String date;
+  final bool isSynced;
+
+  final String? note;
 
   AttendanceLog({
     required this.id,
@@ -35,6 +38,8 @@ class AttendanceLog {
     this.backToWorkLng,
     this.status = 'PRESENT',
     required this.date,
+    this.isSynced = true,
+    this.note,
   });
 
   Map<String, dynamic> toJson() {
@@ -56,6 +61,7 @@ class AttendanceLog {
       'back_to_work_lng': backToWorkLng,
       'status': status,
       'date': date,
+      'note': note ?? '',
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
@@ -65,10 +71,18 @@ class AttendanceLog {
       id: docId,
       userId: json['user_id'] ?? '',
       userName: json['user_name'] ?? '',
-      checkInTime: json['check_in_time'] != null ? DateTime.parse(json['check_in_time']) : null,
-      checkOutTime: json['check_out_time'] != null ? DateTime.parse(json['check_out_time']) : null,
-      tempOutTime: json['temp_out_time'] != null ? DateTime.parse(json['temp_out_time']) : null,
-      backToWorkTime: json['back_to_work_time'] != null ? DateTime.parse(json['back_to_work_time']) : null,
+      checkInTime: json['check_in_time'] != null
+          ? DateTime.parse(json['check_in_time'])
+          : null,
+      checkOutTime: json['check_out_time'] != null
+          ? DateTime.parse(json['check_out_time'])
+          : null,
+      tempOutTime: json['temp_out_time'] != null
+          ? DateTime.parse(json['temp_out_time'])
+          : null,
+      backToWorkTime: json['back_to_work_time'] != null
+          ? DateTime.parse(json['back_to_work_time'])
+          : null,
       checkInLat: json['check_in_lat']?.toDouble(),
       checkInLng: json['check_in_lng']?.toDouble(),
       checkOutLat: json['check_out_lat']?.toDouble(),
@@ -79,6 +93,8 @@ class AttendanceLog {
       backToWorkLng: json['back_to_work_lng']?.toDouble(),
       status: json['status'] ?? 'PRESENT',
       date: json['date'] ?? '',
+      note: json['note'],
+      isSynced: json['is_synced'] as bool? ?? true,
     );
   }
 }

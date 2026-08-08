@@ -127,8 +127,41 @@ extension PosApiJobExtension on PosApiService {
       return data.cast<Map<String, dynamic>>();
     } catch (e) {
       debugPrint('❌ [API] getActiveJobs Error: $e');
-      return [];
+      rethrow;
+    }
+  }
+
+  // ✅ 15. อัปโหลดรูปภาพหลักฐานการส่งมอบเข้า POS Server (สมุดโน๊ต) แทน Firebase Storage
+  Future<String?> uploadProofImage({
+    required File imageFile,
+    required String jobId,
+  }) async {
+    try {
+      final bytes = await imageFile.readAsBytes();
+      final base64Image = base64Encode(bytes);
+
+      final response = await _sendRequest(
+        method: 'POST',
+        path: '/api/v1/jobs/upload',
+        body: {
+          'jobId': jobId,
+          'image': base64Image,
+        },
+      );
+
+      if (response != null && response is Map<String, dynamic>) {
+        final relativeUrl = response['url']?.toString();
+        if (relativeUrl != null && relativeUrl.isNotEmpty) {
+          final baseUrl = await getBaseUrl();
+          final fullUrl = '$baseUrl$relativeUrl';
+          debugPrint('✅ [API] Proof image uploaded to notebook: $fullUrl');
+          return fullUrl;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ [API] uploadProofImage Error: $e');
+      return null;
     }
   }
 }
-

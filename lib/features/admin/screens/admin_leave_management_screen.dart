@@ -2,6 +2,7 @@ import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:developer';
+import 'package:s_link/features/hr/services/hr_api_service.dart';
 
 class AdminLeaveManagementScreen extends StatefulWidget {
   const AdminLeaveManagementScreen({super.key});
@@ -56,6 +57,7 @@ class _AdminLeaveControlView extends StatefulWidget {
 
 class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final HrApiService _hrApi = HrApiService();
   final _formKey = GlobalKey<FormState>();
 
   String? _selectedUserId;
@@ -172,29 +174,15 @@ class _AdminLeaveControlViewState extends State<_AdminLeaveControlView> {
           _leaveFormat == 'HOURLY' ? _endTime.minute : 59);
 
       final String userName = _selectedUserData!['name'] ?? 'Unknown';
-      final String userRole = _selectedUserData!['role'] ?? '-';
-
-      final Map<String, dynamic> data = {
+      await _hrApi.createLeave({
         'user_id': _selectedUserId,
-        'employee_id': _selectedUserId,
-        'user_name': userName,
-        'action': 'holiday_start',
-        'logged_at': FieldValue.serverTimestamp(),
-        'date': Timestamp.fromDate(start),
         'leave_type': _leaveType,
         'leave_format': _leaveFormat,
         'start_date': start.toIso8601String(),
         'end_date': end.toIso8601String(),
         'total_days': _totalDays,
         'reason': _reasonController.text.trim(),
-        'status': 'PENDING',
-      };
-      
-      if (userRole == 'requester') {
-        data['role'] = 'requester';
-      }
-
-      await _firestore.collection('holiday_logs').add(data);
+      });
 
       if (!mounted) return;
 
@@ -441,11 +429,18 @@ class _AdminLeaveHistoryView extends StatefulWidget {
 
 class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
   DateTime _selectedDate = DateTime.now();
+  final HrApiService _hrApi = HrApiService();
+  late Future<List<Map<String, dynamic>>> _leavesFuture;
 
-  String _formatDate(Timestamp? timestamp) {
-    if (timestamp == null) return '-';
-    final dt = timestamp.toDate();
-    return '${dt.day}/${dt.month}/${dt.year} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _reload() {
+    _leavesFuture = _hrApi.getLeaves();
+    if (mounted) setState(() {});
   }
 
   String _formatDisplayDate(DateTime date) {
@@ -456,6 +451,7 @@ class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
     setState(() {
       _selectedDate = _selectedDate.add(Duration(days: offset));
     });
+    _reload();
   }
 
   Future<void> _pickDate() async {
@@ -467,55 +463,21 @@ class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);
+      _reload();
     }
   }
 
-  Future<void> _deleteAllHistory() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('⚠️ ลบประวัติทั้งหมด'),
-        content: const Text(
-            'คุณต้องการลบข้อมูลประวัติการลา "ทั้งหมดในระบบ" ใช่หรือไม่?\nการกระทำนี้ไม่สามารถย้อนกลับได้'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('ยกเลิก')),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child:
-                const Text('ยืนยันลบ', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-    if (!mounted) return;
-
-    SnackbarUtils.showLeft(context, 'กำลังลบข้อมูล... กรุณารอสักครู่');
-
+  Future<void> _updateLeaveStatus(String id, String status) async {
     try {
-      final collection = FirebaseFirestore.instance.collection('holiday_logs');
-      int totalDeleted = 0;
-      while (true) {
-        final snapshot = await collection.limit(500).get();
-        if (snapshot.docs.isEmpty) break;
-        final batch = FirebaseFirestore.instance.batch();
-        for (var doc in snapshot.docs) {
-          batch.delete(doc.reference);
-        }
-        await batch.commit();
-        totalDeleted += snapshot.docs.length;
-      }
-
-      if (mounted) {
-        SnackbarUtils.showLeft(context, 'ลบข้อมูลเรียบร้อยแล้ว $totalDeleted รายการ');
-      }
+      await _hrApi.updateLeaveStatus(id, status);
+      if (!mounted) return;
+      SnackbarUtils.showLeft(
+          context, status == 'APPROVED' ? 'อนุมัติใบลาแล้ว' : 'ไม่อนุมัติใบลาแล้ว');
+      _reload();
     } catch (e) {
       if (mounted) {
-        SnackbarUtils.showLeft(context, 'เกิดข้อผิดพลาด: $e', isError: true);
+        SnackbarUtils.showLeft(context, 'บันทึกรายการไม่สำเร็จ: $e',
+            isError: true);
       }
     }
   }
@@ -576,18 +538,19 @@ class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
                   ),
                   if (!DateUtils.isSameDay(_selectedDate, DateTime.now()))
                     IconButton(
-                      onPressed: () =>
-                          setState(() => _selectedDate = DateTime.now()),
+                      onPressed: () {
+                        setState(() => _selectedDate = DateTime.now());
+                        _reload();
+                      },
                       icon: const Icon(Icons.today, color: Colors.blue),
                       tooltip: 'กลับไปวันนี้',
                     )
                 ],
               ),
-              // Delete All Button
               IconButton(
-                onPressed: _deleteAllHistory,
-                icon: const Icon(Icons.delete_forever, color: Colors.pink),
-                tooltip: 'ลบประวัติทั้งหมด',
+                onPressed: _reload,
+                icon: const Icon(Icons.refresh, color: Colors.teal),
+                tooltip: 'รีเฟรชข้อมูลจาก POS',
               ),
             ],
           ),
@@ -595,32 +558,23 @@ class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
 
         // --- 2. List View ---
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection('holiday_logs')
-                .where('logged_at',
-                    isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-                .where('logged_at',
-                    isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
-                .orderBy('logged_at', descending: true)
-                .snapshots(),
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            future: _leavesFuture,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
-                // If index required, showed error
-                return Center(
-                    child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                      'ไม่สามารถโหลดข้อมูลได้ (อาจต้องสร้าง Index): ${snapshot.error}',
-                      style: const TextStyle(color: Colors.red)),
-                ));
+                return Center(child: Text('ไม่สามารถโหลดข้อมูลได้: ${snapshot.error}'));
               }
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              final docs = snapshot.data!.docs;
-              if (docs.isEmpty) {
+              final leaves = (snapshot.data ?? const []).where((leave) {
+                final start = DateTime.tryParse('${leave['start_date']}');
+                final end = DateTime.tryParse('${leave['end_date']}');
+                return start != null && end != null &&
+                    !start.isAfter(endOfDay) && !end.isBefore(startOfDay);
+              }).toList();
+              if (leaves.isEmpty) {
                 return Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -637,39 +591,53 @@ class _AdminLeaveHistoryViewState extends State<_AdminLeaveHistoryView> {
               }
 
               return ListView.separated(
-                itemCount: docs.length,
+                itemCount: leaves.length,
                 separatorBuilder: (ctx, i) => const Divider(height: 1),
                 itemBuilder: (context, index) {
-                  final data = docs[index].data() as Map<String, dynamic>;
-                  final userName = data['user_name'] ?? 'Unknown';
-                  final action = data['action'] ?? '';
-                  final loggedAt = data['logged_at'] as Timestamp?;
-
-                  final isStart = action == 'holiday_start';
-
-                  // แปล action เป็นภาษาไทย
-                  String actionText =
-                      isStart ? 'แจ้งลาหยุด' : 'แจ้งกลับมาทำงาน';
-                  Color statusColor = isStart ? Colors.orange : Colors.green;
-                  IconData statusIcon =
-                      isStart ? Icons.beach_access : Icons.work;
+                  final data = leaves[index];
+                  final status = '${data['status'] ?? 'PENDING'}'.toUpperCase();
+                  final isPending = status == 'PENDING';
+                  final statusColor = status == 'APPROVED'
+                      ? Colors.green
+                      : status == 'REJECTED'
+                          ? Colors.red
+                          : Colors.orange;
+                  final statusText = status == 'APPROVED'
+                      ? 'อนุมัติแล้ว'
+                      : status == 'REJECTED'
+                          ? 'ไม่อนุมัติ'
+                          : 'รออนุมัติ';
 
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: statusColor.withValues(alpha: 0.1),
-                      child: Icon(statusIcon, color: statusColor),
+                      child: Icon(Icons.beach_access, color: statusColor),
                     ),
-                    title: Text(userName,
+                    title: Text('${data['employee_name'] ?? 'Unknown'}',
                         style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('เวลา: ${_formatDate(loggedAt)}'),
-                    trailing: Chip(
-                      label: Text(
-                        actionText,
-                        style: TextStyle(color: statusColor, fontSize: 12),
-                      ),
-                      backgroundColor: statusColor.withValues(alpha: 0.1),
-                      side: BorderSide.none,
-                    ),
+                    subtitle: Text('${data['leave_type'] ?? '-'} • ${data['total_days'] ?? '-'} วัน\n${data['reason'] ?? '-'}'),
+                    isThreeLine: true,
+                    trailing: isPending
+                        ? Wrap(spacing: 4, children: [
+                            IconButton(
+                              tooltip: 'ไม่อนุมัติ',
+                              onPressed: () =>
+                                  _updateLeaveStatus('${data['id']}', 'REJECTED'),
+                              icon: const Icon(Icons.close, color: Colors.red),
+                            ),
+                            IconButton(
+                              tooltip: 'อนุมัติ',
+                              onPressed: () =>
+                                  _updateLeaveStatus('${data['id']}', 'APPROVED'),
+                              icon: const Icon(Icons.check, color: Colors.green),
+                            ),
+                          ])
+                        : Chip(
+                            label: Text(statusText,
+                                style: TextStyle(color: statusColor, fontSize: 12)),
+                            backgroundColor: statusColor.withValues(alpha: 0.1),
+                            side: BorderSide.none,
+                          ),
                   );
                 },
               );

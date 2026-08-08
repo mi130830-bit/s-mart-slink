@@ -31,15 +31,18 @@ class _StockAlertScreenState extends State<StockAlertScreen> {
 
   Future<void> _onSubmitPendingItems(List<String> items) async {
     try {
-      final authProvider = Provider.of<AuthenticationProvider>(context, listen: false);
-      final alertProvider = Provider.of<AlertLogProvider>(context, listen: false);
+      final authProvider =
+          Provider.of<AuthenticationProvider>(context, listen: false);
+      final alertProvider =
+          Provider.of<AlertLogProvider>(context, listen: false);
       final uid = authProvider.currentUser?.uid ?? 'unknown';
 
       final futures = items.map((item) => alertProvider.createAlert(item, uid));
       await Future.wait(futures);
 
       if (mounted) {
-        SnackbarUtils.showLeft(context, 'แจ้งเตือน ${items.length} รายการเรียบร้อย!');
+        SnackbarUtils.showLeft(
+            context, 'แจ้งเตือน ${items.length} รายการเรียบร้อย!');
       }
     } catch (e) {
       if (mounted) {
@@ -51,6 +54,15 @@ class _StockAlertScreenState extends State<StockAlertScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final authProvider = Provider.of<AuthenticationProvider>(context);
+    if (!authProvider.canManageStockAlerts) {
+      return const Scaffold(
+        body: Center(
+          child: Text('บัญชีนี้ไม่มีสิทธิ์ใช้งานสินค้าใกล้หมดสต็อก'),
+        ),
+      );
+    }
+
     final content = Column(
       children: [
         PendingAlertsList(

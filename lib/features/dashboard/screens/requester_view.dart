@@ -67,7 +67,7 @@ class _RequesterViewState extends State<RequesterView>
           labelStyle:
               const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
           tabs: const [
-            Tab(text: 'งานรอ\nส่ง'),
+            Tab(text: 'งาน\nจัดส่ง'),
             Tab(text: 'งานที่\nส่งแล้ว'),
             Tab(text: 'ของ\nหมด'),
           ],
@@ -103,13 +103,17 @@ class _PendingJobsTab extends StatelessWidget {
           onRefresh: () async {
             await jobProvider.refreshStreams();
           },
-          child: _buildBody(jobProvider, jobs),
+          child: _buildBody(context, jobProvider, jobs),
         );
       },
     );
   }
 
-  Widget _buildBody(JobProvider jobProvider, List<Job> jobs) {
+  Widget _buildBody(
+    BuildContext context,
+    JobProvider jobProvider,
+    List<Job> jobs,
+  ) {
     if (jobProvider.pendingJobsError != null) {
       return ListView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -155,40 +159,92 @@ class _PendingJobsTab extends StatelessWidget {
       );
     }
 
-    return Column(
+    final dispatchedJobs = jobs.where((job) => job.isDepartureApproved).toList();
+    final waitingJobs = jobs.where((job) => !job.isDepartureApproved).toList();
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 16),
       children: [
-        const Padding(
-          padding: EdgeInsets.all(12.0),
-          child: Text('งานที่รอจัดส่ง',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        ),
-        Expanded(
-          child: ListView.builder(
-            physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: jobs.length,
-            itemBuilder: (context, index) {
-              final job = jobs[index];
-              return Card(
-                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: ListTile(
-                  leading: const CircleAvatar(
-                      backgroundColor: Colors.orange,
-                      child: Icon(Icons.local_shipping, color: Colors.white)),
-                  title: Text(job.customer.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(job.customer.address,
-                      maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-                  onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (_) => JobDetailScreen(job: job))),
-                ),
-              );
-            },
+        if (dispatchedJobs.isNotEmpty) ...[
+          _buildSectionHeader(
+            'กำลังจัดส่ง (${dispatchedJobs.length})',
+            Icons.local_shipping,
+            Colors.blue,
+          ),
+          ...dispatchedJobs.map(
+            (job) => _buildJobTile(context, job, isDispatched: true),
+          ),
+        ],
+        if (waitingJobs.isNotEmpty) ...[
+          _buildSectionHeader(
+            'รอจัดส่ง (${waitingJobs.length})',
+            Icons.hourglass_top,
+            Colors.orange,
+          ),
+          ...waitingJobs.map(
+            (job) => _buildJobTile(context, job, isDispatched: false),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSectionHeader(String text, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+      child: Row(
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildJobTile(
+    BuildContext context,
+    Job job, {
+    required bool isDispatched,
+  }) {
+    final driverName = job.deliveryTeam
+        .where((member) => member.type == 'driver' || member.type == 'staff')
+        .map((member) => member.name)
+        .join(', ');
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: isDispatched ? Colors.blue : Colors.orange,
+          child: Icon(
+            isDispatched ? Icons.local_shipping : Icons.hourglass_top,
+            color: Colors.white,
           ),
         ),
-      ],
+        title: Text(job.customer.name,
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+        subtitle: Text(
+          isDispatched
+              ? 'กำลังจัดส่งโดย: ${driverName.isNotEmpty ? driverName : job.driverId ?? '-'}\n${job.customer.address}'
+              : job.customer.address,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => JobDetailScreen(job: job)),
+        ),
+      ),
     );
   }
 }

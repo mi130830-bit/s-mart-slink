@@ -17,9 +17,9 @@ class LocalJobRepository {
   // ═══════════════════════════════════════════════════
 
   /// โหลดงานที่ยัง active ทั้งหมดจาก Local DB แปลงเป็น Job Model
-  Future<List<Job>> getActiveJobs() async {
+  Future<List<Job>> getActiveJobs(String ownerUid) async {
     log('$_tag Fetching active jobs from SQLite...');
-    final rows = await _db.getActiveJobs();
+    final rows = await _db.getActiveJobs(ownerUid);
     final jobs = rows.map(_rowToJob).toList();
     log('$_tag Loaded ${jobs.length} active jobs');
     return jobs;
@@ -31,8 +31,8 @@ class LocalJobRepository {
     return rows.map(_rowToJob).toList();
   }
 
-  Future<Job?> getJobByOrderId(int orderId) async {
-    final row = await _db.getJobByOrderId(orderId);
+  Future<Job?> getJobByOrderId(int orderId, String ownerUid) async {
+    final row = await _db.getJobByOrderId(orderId, ownerUid);
     if (row == null) return null;
     return _rowToJob(row);
   }
@@ -42,10 +42,13 @@ class LocalJobRepository {
   // ═══════════════════════════════════════════════════
 
   /// บันทึกหรืออัปเดตงานจาก API Response (List)
-  Future<void> syncFromApi(List<Map<String, dynamic>> apiJobs) async {
+  Future<void> syncFromApi(
+    List<Map<String, dynamic>> apiJobs, {
+    required String ownerUid,
+  }) async {
     log('$_tag Syncing ${apiJobs.length} jobs from API into local DB...');
     for (final job in apiJobs) {
-      await _db.upsertJob(job);
+      await _db.upsertJob(job, ownerUid: ownerUid);
     }
     log('$_tag Sync complete: ${apiJobs.length} jobs saved');
   }
@@ -53,6 +56,7 @@ class LocalJobRepository {
   /// บันทึกผลการปิดงานลงเครื่องก่อน (Local-first)
   Future<void> markCompleted({
     required int orderId,
+    required String ownerUid,
     required String proofImagePath,
     required double proofLat,
     required double proofLng,
@@ -60,6 +64,7 @@ class LocalJobRepository {
     log('$_tag Marking orderId=$orderId as completed (local-first)');
     await _db.markJobCompleted(
       orderId: orderId,
+      ownerUid: ownerUid,
       proofImagePath: proofImagePath,
       proofLat: proofLat,
       proofLng: proofLng,
@@ -67,9 +72,45 @@ class LocalJobRepository {
   }
 
   /// ลบงานออกจากเครื่องเมื่อ sync กับ server สำเร็จแล้ว
-  Future<void> deleteJob(int orderId) async {
+  Future<void> deleteJob(int orderId, String ownerUid) async {
     log('$_tag Deleting job orderId=$orderId from local DB after sync');
-    await _db.deleteJob(orderId);
+    await _db.deleteJob(orderId, ownerUid);
+  }
+
+  Future<void> claimUnownedRecords(String ownerUid) async {
+    await _db.claimUnownedRecords(ownerUid);
+  }
+
+  Future<void> removeMissingFirebaseJobs(String ownerUid) async {
+    final jobs = await getActiveJobs(ownerUid);
+    for (final job in jobs) {
+      if (job.localOrderId == null || job.id.startsWith('local_')) continue;
+      final snapshot = await FirebaseFirestore.instance
+          .collection('jobs')
+          .doc(job.id)
+          .get();
+      if (!snapshot.exists) {
+        await deleteJob(job.localOrderId!, ownerUid);
+      }
+    }
+  }
+
+  Future<void> updateOfflineAssignment(
+    int orderId,
+    bool isDepartureApproved,
+    List<String> driverIds,
+    List<String> vehicleIds,
+    List<dynamic> deliveryTeam,
+    String ownerUid,
+  ) async {
+    await _db.updateOfflineAssignment(
+      orderId,
+      isDepartureApproved,
+      driverIds,
+      vehicleIds,
+      deliveryTeam,
+      ownerUid,
+    );
   }
 
   /// ล้างแคชเก่า (เรียกตอนเปิดแอป)
@@ -81,17 +122,29 @@ class LocalJobRepository {
   // SYNC QUEUE
   // ═══════════════════════════════════════════════════
 
-  Future<int> enqueueOfflineJob(Map<String, dynamic> data) async {
+  Future<int> enqueueOfflineJob(Map<String, dynamic> data, String ownerUid) async {
     log('$_tag Enqueueing offline job for later sync (jobId=${data['jobId']})');
-    return await _db.enqueueSync(data);
+    return await _db.enqueueSync(data, ownerUid);
   }
 
-  Future<List<Map<String, dynamic>>> getPendingSyncItems() async {
-    return await _db.getPendingSyncItems();
+  Future<void> queueCompletedJob(Map<String, dynamic> data, String ownerUid) async {
+    await _db.queueCompletedJob(data, ownerUid);
+  }
+
+  Future<List<Map<String, dynamic>>> getPendingSyncItems(String ownerUid) async {
+    return await _db.getPendingSyncItems(ownerUid);
   }
 
   Future<void> markSyncItemStatus(int id, String status) async {
     await _db.updateSyncStatus(id, status);
+  }
+
+  Future<void> recordSyncFailure(int id) async {
+    await _db.recordSyncFailure(id);
+  }
+
+  Future<void> recoverInterruptedSyncs(String ownerUid) async {
+    await _db.recoverInterruptedSyncs(ownerUid);
   }
 
   Future<void> removeSyncItem(int id) async {
@@ -148,8 +201,29 @@ class LocalJobRepository {
       proofLocation = GeoPoint(pLat, pLng);
     }
 
+    List<String> driverIds = [];
+    List<String> vehicleIds = [];
+    List<DeliveryTeamItem> deliveryTeam = [];
+    
+    try {
+      if (row['driverIds'] != null) {
+        final decoded = jsonDecode(row['driverIds'].toString());
+        if (decoded is List) driverIds = decoded.map((e) => e.toString()).toList();
+      }
+      if (row['vehicleIds'] != null) {
+        final decoded = jsonDecode(row['vehicleIds'].toString());
+        if (decoded is List) vehicleIds = decoded.map((e) => e.toString()).toList();
+      }
+      if (row['deliveryTeamJson'] != null) {
+        final decoded = jsonDecode(row['deliveryTeamJson'].toString());
+        if (decoded is List) {
+          deliveryTeam = decoded.map((e) => DeliveryTeamItem.fromJson(Map<String, dynamic>.from(e))).toList();
+        }
+      }
+    } catch (_) {}
+
     return Job(
-      id:             'local_$orderId',
+      id:             row['firebaseJobId']?.toString().isNotEmpty == true ? row['firebaseJobId'].toString() : 'local_$orderId',
       localOrderId:   orderId,
       status:         row['status']?.toString() ?? 'pending',
       jobType:        row['jobType']?.toString() ?? 'delivery',
@@ -159,7 +233,7 @@ class LocalJobRepository {
       proofImage:     row['proofImagePath']?.toString(),
       proofLocation:  proofLocation,
       destinationLocation: destLocation,
-      isDepartureApproved: true,
+      isDepartureApproved: (row['isDepartureApproved'] ?? 0) == 1,
       createdAt:      _parseDate(row['createdAt']) ?? DateTime.now(),
       completedAt:    _parseDate(row['completedAt']),
       customer: Customer(
@@ -168,9 +242,9 @@ class LocalJobRepository {
         address:     row['customerAddress']?.toString() ?? '',
       ),
       items: items,
-      deliveryTeam: [],
-      driverIds: [],
-      vehicleIds: [],
+      deliveryTeam: deliveryTeam,
+      driverIds: driverIds,
+      vehicleIds: vehicleIds,
       billImageUrls: [],
       createdBy: '',
     );

@@ -91,11 +91,9 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ✅ Attendance Logs — เฉพาะ approved user เขียนได้เฉพาะ log ของตัวเอง ยกเว้น HR/Admin
+    // ✅ Attendance Logs — All approved users (employees) can read and write
     match /attendance_logs/{logId} {
-      allow read: if isApproved();
-      allow create: if isApproved() && (request.resource.data.user_id == request.auth.uid || isAdmin() || isHr());
-      allow update: if isApproved() && (isAdmin() || isHr() || resource.data.user_id == request.auth.uid);
+      allow read, create, update: if isApproved();
       allow delete: if isAdmin() || isHr();
     }
 

@@ -31,10 +31,16 @@ class JobService {
         });
   }
 
-  Stream<List<Job>> getDriverAssignedJobs(String driverUid) {
-    return _firestore
-        .collection(_jobCollection)
-        .where('driver_ids', arrayContains: driverUid)
+  Stream<List<Job>> getDriverAssignedJobs(List<String> driverIds) {
+    final ids = driverIds.where((id) => id.isNotEmpty).toSet().toList();
+    final Query<Map<String, dynamic>> query = ids.length == 1
+        ? _firestore
+            .collection(_jobCollection)
+            .where('driver_ids', arrayContains: ids.first)
+        : _firestore
+            .collection(_jobCollection)
+            .where('driver_ids', arrayContainsAny: ids);
+    return query
         .snapshots()
         .map((snapshot) {
           final jobs = snapshot.docs.map((doc) => Job.fromFirestore(doc)).toList();
@@ -44,10 +50,14 @@ class JobService {
   }
 
   // ✅ Legacy Stream: For old jobs that only have 'driver_id' (string) not array
-  Stream<List<Job>> getLegacyDriverAssignedJobs(String driverUid) {
-    return _firestore
-        .collection(_jobCollection)
-        .where('driver_id', isEqualTo: driverUid)
+  Stream<List<Job>> getLegacyDriverAssignedJobs(List<String> driverIds) {
+    final ids = driverIds.where((id) => id.isNotEmpty).toSet().toList();
+    final Query<Map<String, dynamic>> query = ids.length == 1
+        ? _firestore
+            .collection(_jobCollection)
+            .where('driver_id', isEqualTo: ids.first)
+        : _firestore.collection(_jobCollection).where('driver_id', whereIn: ids);
+    return query
         .snapshots(includeMetadataChanges: false)
         .map((snapshot) =>
             snapshot.docs.map((doc) => Job.fromFirestore(doc)).toList());
@@ -134,12 +144,13 @@ class JobService {
   }) async {
     final Map<String, dynamic> updates = {
       'status': 'completed',
-      // 'proof_image': proofImage, // ✅ ไม่เก็บลง Firebase แล้ว (ไปเก็บที่ MySQL โดยตรงแทน)
-      // 'proof_location': proofLocation, // ✅ ไม่เก็บลง Firebase แล้ว
-      // 'delivery_team': deliveryTeamData, // ✅ ไม่เก็บลง Firebase แล้ว
       'completed_at': FieldValue.serverTimestamp(),
       'driver_id': driverUid,
     };
+
+    if (proofImage.isNotEmpty) {
+      updates['proof_image'] = proofImage;
+    }
 
     if (collectedCod != null) {
       updates['collected_cod'] = collectedCod;

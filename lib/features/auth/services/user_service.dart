@@ -6,14 +6,15 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:s_link/features/auth/models/user.dart';
 import 'package:s_link/features/auth/models/user_role.dart';
 import 'package:s_link/features/pos/services/pos_api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class UserService {
   FirebaseFirestore get _firestore => FirebaseFirestore.instance;
   FirebaseMessaging get _fcm => FirebaseMessaging.instance;
 
   // 1. บันทึกข้อมูล User ใหม่
-  Future<void> saveNewUser(
-      String uid, String email, String name, UserRole role) async {
+  Future<void> saveNewUser(String uid, String email, String name, UserRole role,
+      {String? employeeId}) async {
     final userRef = _firestore.collection('users').doc(uid);
     String? fcmToken;
     try {
@@ -24,6 +25,7 @@ class UserService {
 
     final newUser = UserModel(
       uid: uid,
+      employeeId: employeeId,
       email: email,
       name: name,
       role: role,
@@ -39,12 +41,18 @@ class UserService {
   // ✅ 1.5 ดึงรายชื่อพนักงานขับรถทั้งหมด (สำหรับหน้า Assign Job)
   Future<List<UserModel>> getDrivers() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('jwt_token');
+      if (token == null || token.isEmpty) {
+        throw StateError('POS login is required before loading drivers');
+      }
       final response = await PosApiService().getRaw('/employees/drivers');
       if (response != null && response['drivers'] != null) {
         final List<dynamic> driversData = response['drivers'];
         final users = driversData.map((d) {
           return UserModel(
             uid: d['id'].toString(),
+            employeeId: d['employee_id']?.toString(),
             email: '', // Not provided by this endpoint
             name: d['name'] ?? 'Unknown',
             role: UserRole.driver,
@@ -67,8 +75,9 @@ class UserService {
   Future<List<UserModel>> getAllUsers() async {
     try {
       final snapshot = await _firestore.collection('users').get();
-      final users = snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList();
-      
+      final users =
+          snapshot.docs.map((doc) => UserModel.fromFirestore(doc)).toList();
+
       users.sort((a, b) => a.name.compareTo(b.name));
       return users;
     } catch (e, stack) {
@@ -86,7 +95,7 @@ class UserService {
   void _handlePostRegisterSubscription(UserRole role) {
     try {
       if (role == UserRole.gasStation) return;
-      
+
       if (role == UserRole.admin) {
         _fcm.subscribeToTopic('admin_alerts');
       } else if (role == UserRole.driver) {
@@ -126,12 +135,12 @@ class UserService {
       _fcm.unsubscribeFromTopic('requester_alerts'); // ✅ เพิ่มการ Reset
 
       final role = roleString.toLowerCase();
-      
+
       // หากเป็นเด็กปั้ม ไม่ต้องรับแจ้งเตือนใดๆ ทั้งสิ้น (รวมถึง direct push)
       if (role == 'gas_station' || role == 'gasstation') {
-        return; 
+        return;
       }
-      
+
       if (role == 'admin') {
         _fcm.subscribeToTopic('admin_alerts');
       } else if (role == 'driver') {
@@ -174,7 +183,7 @@ class UserService {
   // ✅ อัปเดตข้อมูลพนักงาน (ชื่อและตำแหน่ง) พร้อมซิงค์เข้าตาราง deliverers เพื่อไม่ให้ส่งผลเสียต่อระบบประวัติจัดส่งและรายงาน
   Future<void> updateUser(String uid, String newName, String newRole) async {
     final batch = _firestore.batch();
-    
+
     final userRef = _firestore.collection('users').doc(uid);
     batch.update(userRef, {
       'name': newName,
@@ -183,10 +192,13 @@ class UserService {
 
     final delivererRef = _firestore.collection('deliverers').doc(uid);
     if (newRole == 'driver' || newRole == 'requester') {
-      batch.set(delivererRef, {
-        'name': newName,
-        'isActive': true,
-      }, SetOptions(merge: true));
+      batch.set(
+          delivererRef,
+          {
+            'name': newName,
+            'isActive': true,
+          },
+          SetOptions(merge: true));
     } else {
       batch.delete(delivererRef);
     }
@@ -197,7 +209,7 @@ class UserService {
   // ✅ ลบข้อมูลพนักงานออกจากระบบ (กรณีเลิกจ้าง) พร้อมลบออกจากกลุ่มประวัติจัดส่งด้วย
   Future<void> deleteUser(String uid) async {
     final batch = _firestore.batch();
-    
+
     final userRef = _firestore.collection('users').doc(uid);
     batch.delete(userRef);
 

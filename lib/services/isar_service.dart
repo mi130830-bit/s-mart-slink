@@ -1,6 +1,7 @@
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:s_link/features/hr/models/shop_work_log_isar.dart';
+import 'package:s_link/features/hr/models/attendance_log_isar.dart';
 
 class IsarService {
   late Future<Isar> db;
@@ -13,7 +14,7 @@ class IsarService {
     if (Isar.instanceNames.isEmpty) {
       final dir = await getApplicationDocumentsDirectory();
       return await Isar.open(
-        [ShopWorkLogIsarSchema],
+        [ShopWorkLogIsarSchema, AttendanceLogIsarSchema],
         directory: dir.path,
         inspector: true,
       );
