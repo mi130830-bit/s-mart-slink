@@ -2,6 +2,53 @@
 
 ---
 
+## [2026-08-18] Safe points/coupon checkout / ชำระเงินด้วยแต้มและคูปองอย่างปลอดภัย
+
+**ไทย:** หน้า Payment เพิ่มช่องใช้แต้มและคูปอง LINE OA โดยเลือกได้อย่างใดอย่างหนึ่ง
+เท่านั้น และต้องเลือกลูกค้าก่อน กรณีใช้สิทธิ์ แอปส่งเพียง product ID/จำนวน, ลูกค้า,
+เงินสดที่รับ และ UUID กันคำสั่งซ้ำ ไปที่ API checkout ใหม่; ไม่ส่งยอดรวม ส่วนลด หรือ VAT
+จากมือถือ. ใช้สิทธิ์ได้กับเงินสดเท่านั้นในรอบนี้ เพื่อไม่ให้ยอด QR หรือขายเชื่อคลาดเคลื่อน;
+เซิร์ฟเวอร์คืนยอดสุทธิและเงินทอนหลังคำนวณ VAT In/ส่วนลดแล้ว.
+
+**English:** Payment now offers mutually exclusive point redemption and LINE OA
+coupon fields, requiring a selected customer. For a benefit sale, the app sends
+only product IDs/quantities, customer, cash received, and an idempotency UUID to
+the authoritative checkout API—never mobile totals, discounts, or VAT. Benefits
+are cash-only for now to avoid QR/credit amount mismatches; the server returns
+the final VAT-inclusive total and change.
+
+**เพิ่มเติม / Addendum:** ปุ่ม MAX เรียก quote แบบอ่านอย่างเดียวจาก POS เพื่อแสดง
+แต้มคงเหลือและเพดาน 75% ตามยอดสินค้าจริง; quote จะถูกล้างเมื่อรายการหรือลูกค้าเปลี่ยน
+และ checkout จะตรวจ/ล็อกข้อมูลเดิมซ้ำเสมอ. The MAX quote is read-only and is
+cleared when the cart or customer changes; checkout always revalidates under
+transaction locks.
+
+---
+
+## [2026-08-15] Shared stock-count template and protected approval / แบบตรวจนับกลางและการอนุมัติที่ป้องกันซ้ำ
+
+**ไทย:** หน้าคนขับใช้รายการตรวจนับพื้นฐานจากแบบกลางที่แก้ไขได้ (เสาและฝาวง) พร้อม
+แคชสำหรับออฟไลน์. หลัง POS ยืนยันปรับสต๊อก ใบจะถูกปิดและไม่สามารถแก้ไขหรือลบจาก
+S-Link ได้อีก; การ retry ด้วยข้อมูลเดิมปลอดภัยและไม่สร้างผลปรับสต๊อกซ้ำ.
+
+**English:** The driver screen uses the editable shared stock-count template
+(poles and covers) with an offline cache. Once POS approves a stock adjustment,
+the sheet is closed and cannot be changed or deleted from S-Link; an identical
+network retry is safe and does not create another adjustment.
+
+---
+
+## [2026-08-14] Select supplier before saving a PO draft
+
+**ไทย:** หน้าร่างใบรับสินค้าให้ค้นหาและเลือกผู้ขายจากรายชื่อใน POS ก่อนบันทึก
+จะไม่ยอมส่งหากพิมพ์ชื่อเองแต่ยังไม่ได้เลือกรายการ เพื่อป้องกันชื่อผู้ขายซ้ำหรือผิดราย
+
+**English:** The S-Link PO-draft screen now requires selecting a supplier from
+the POS list before saving. Free-typed but unselected names are rejected to
+avoid duplicate or incorrect supplier records.
+
+---
+
 ## [2026-08-08] Attendance queue retries automatically for every active role
 
 **ไทย:** แก้กรณีลงเวลาแบบออฟไลน์แล้วต้องกดรีเฟรชเอง โดยเริ่มตัวติดตาม
@@ -304,3 +351,55 @@ retry instead of showing a false success.
 
 - TH: เพิ่มเวอร์ชัน S-Link เป็น 4.0.2+112 และสร้าง Android App Bundle สำหรับการเผยแพร่
 - EN: Bumped S-Link to 4.0.2+112 and produced the Android App Bundle release artifact.
+# 2026-08-08 — Shop work-log history consistency / ประวัติงานร้านตรงกับ POS
+
+- TH: หน้า “ประวัติงานร้าน” ดึงชื่อผู้บันทึกจาก POS โดยตรง และไม่เทียบรหัส
+  พนักงานกับ Firestore คนละชุดอีกต่อไป จึงไม่แสดง `ID: ...` โดยไม่จำเป็น
+  พร้อมเปลี่ยนการเปิดหน้าให้รีเฟรชเฉพาะประวัติงาน ไม่รีเซ็ต listener ของ
+  รายการแจ้งเตือนทั้งแอป
+- TH: ซิงก์ข้อมูลจาก POS อัปเดตรายการที่ยืนยันแล้วได้ แต่ปกป้องรายการที่ยัง
+  รอส่งจากเครื่องไว้ เพื่อไม่ให้การเปิดหน้าประวัติทำให้ข้อมูลออฟไลน์หาย
+- EN: Shop work-log history now receives the recorder name from POS, refreshes
+  only its own data, and never overwrites unsynced local work logs.
+
+# 2026-08-09 — Shared stock-check template / แบบตรวจนับส่วนกลาง
+
+- TH: โหลดแบบตรวจนับจาก POS API และเก็บสำเนาล่าสุดไว้ใช้งานออฟไลน์; ADMIN/HR
+  เปิดหน้าตั้งค่าเพื่อเปิดหรือพักรายการได้ โดยใบงานที่ส่งแล้วคงชื่อและหน่วยเดิม
+- EN: Stock-check templates now load from the POS API with a last-good offline
+  cache. ADMIN/HR can enable or archive items without changing submitted logs.
+- TH: ผู้มีสิทธิ์เพิ่มรายการด้วย UUID, แก้ชื่อ/หน่วย และลากเรียงลำดับได้;
+  การปิดรายการเป็น archive ไม่ลบประวัติ
+- EN: Authorized users can add UUID-backed items, edit label/unit, and reorder
+  them. Disabling archives an item rather than deleting historical data.
+- TH: ปรับ `if/else` ในหน้าจอแก้ไขแบบตรวจนับให้ใช้ปีกกาตาม Dart linter
+  เพื่อไม่ให้มีคำเตือน `curly_braces_in_flow_control_structures`.
+- EN: Wrapped the stock-check editor's `if/else` branches in braces to satisfy
+  the Dart flow-control lint.
+
+# 2026-08-10 — Clear stale attendance cache safely / ล้างแคชลงเวลาเก่าอย่างปลอดภัย
+
+- TH: เมื่อ POS ยืนยันว่าไม่มีรายการลงเวลาของผู้ใช้ในวันปัจจุบัน S-Link จะลบ
+  เฉพาะแคชที่เคยซิงก์สำเร็จแล้ว; รายการที่ยังรอส่งจะคงอยู่เสมอ เพื่อไม่ให้เวลา
+  เข้างานออฟไลน์หาย และป้องกันการแสดงเวลาของพนักงานคนอื่นจากแคชเดิม.
+- EN: When POS confirms that a user has no attendance record today, S-Link now
+  removes only an already-synced local cache entry. Unsynced attendance remains
+  protected, preventing both stale cross-user display and offline data loss.
+
+# 2026-08-14 — Multi-item purchase-order drafts / ร่างใบสั่งซื้อหลายรายการ
+
+- TH: เปลี่ยนหน้ารับสินค้าของ S-Link ให้ส่งร่างใบสั่งซื้อหลายรายการไปตรวจต่อใน
+  POS แทนการเพิ่มสต็อกทันที รองรับค้นหาสินค้าเดิมหรือพิมพ์ชื่อรายการใหม่ และให้
+  จำนวน/ทุนต่อหน่วย/ยอดรวมคำนวณย้อนกลับกันได้; ร่างใช้ผู้ขาย “ไม่ระบุผู้ขาย” และ
+  ไม่เปลี่ยนสต็อก ต้นทุน หรือราคาปลีก.
+- EN: Changed S-Link receiving into a multi-item purchase-order draft submitted
+  for Desktop POS review rather than immediate stock changes. It supports
+  existing-product lookup or freeform names with mutually calculated quantity,
+  unit cost, and total; drafts use the “Unspecified supplier” and never change
+  stock, cost, or retail price.
+
+- TH: เพิ่ม dropdown รายการสินค้าที่พบใต้ช่องค้นหาชื่อสินค้าในหน้าร่างใบรับสินค้า
+  ให้ผู้ใช้เลือกสินค้าที่ต้องการก่อนเพิ่มรายการ แทนการเลือกผลการค้นหาแรกเอง.
+- EN: Added a product-result dropdown below the draft purchase-order search
+  field, allowing users to choose the intended product instead of automatically
+  selecting the first name-search result.

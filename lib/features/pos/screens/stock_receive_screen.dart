@@ -1,9 +1,15 @@
-import 'package:s_link/utils/snackbar_utils.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:s_link/features/pos/models/pos_product.dart';
 import 'package:s_link/features/pos/repositories/pos_repository.dart';
 import 'package:s_link/features/pos/screens/scanner_screen.dart';
+import 'package:s_link/utils/snackbar_utils.dart';
+import 'package:uuid/uuid.dart';
 
+/// This screen deliberately creates only a PO draft; stock and product prices
+/// are changed later by an authorised user on POS Desktop.
 class StockReceiveScreen extends StatefulWidget {
   const StockReceiveScreen({super.key});
 
@@ -12,331 +18,449 @@ class StockReceiveScreen extends StatefulWidget {
 }
 
 class _StockReceiveScreenState extends State<StockReceiveScreen> {
+  final _supplierController = TextEditingController();
   final _searchController = TextEditingController();
+  final _focusNode = FocusNode();
   final _repo = PosRepository();
-  final FocusNode _focusNode = FocusNode();
-
-  // Map<ProductId, QuantityToAdd>
-  final Map<int, double> _receivingItems = {};
-  // Ordered list for display
-  final List<PosProduct> _scannedProducts = [];
-
+  final _lines = <_DraftLine>[];
+  final _suggestions = <PosProduct>[];
+  final _supplierSuggestions = <Map<String, dynamic>>[];
   bool _isLoading = false;
+  Timer? _searchDebounce;
+  Timer? _supplierDebounce;
+  String? _submissionId;
+  int? _supplierId;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _focusNode.requestFocus();
-    });
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _focusNode.requestFocus());
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _supplierController.dispose();
     _focusNode.dispose();
+    _searchDebounce?.cancel();
+    _supplierDebounce?.cancel();
+    for (final line in _lines) {
+      line.dispose();
+    }
     super.dispose();
   }
 
-  Future<void> _handleScan(String code) async {
-    if (code.trim().isEmpty) return;
+  Future<void> _findOrAdd(String query) async {
+    final text = query.trim();
+    if (text.isEmpty) return;
     _searchController.clear();
-
     setState(() => _isLoading = true);
-
     try {
-      final results = await _repo.getAllProducts(searchTerm: code);
-
-      if (results.isNotEmpty) {
-        // Assume exact match or first result
-        final product = results.firstWhere(
-            (p) => p.barcode == code || p.barcode.endsWith(code),
-            orElse: () => results.first);
-
-        _addProduct(product);
+      final results = await _repo.getAllProducts(searchTerm: text);
+      final exact = results.where((product) =>
+          product.barcode == text || product.barcode.endsWith(text));
+      if (exact.isNotEmpty) {
+        _addProduct(exact.first);
+      } else if (results.isEmpty) {
+        _addFreeform(text);
+      } else if (results.length == 1) {
+        _addProduct(results.first);
       } else {
-        if (mounted) {
-          SnackbarUtils.showLeft(context, 'ไม่พบสินค้า: $code', isError: true);
-        }
+        setState(() {
+          _suggestions
+            ..clear()
+            ..addAll(results);
+        });
       }
-    } catch (e) {
-      if (mounted) {
-        SnackbarUtils.showLeft(context, 'Error: $e', isError: true);
-      }
+    } catch (_) {
+      if (mounted) _addFreeform(text);
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
       _focusNode.requestFocus();
     }
   }
 
-  void _addProduct(PosProduct product) {
-    setState(() {
-      if (!_receivingItems.containsKey(product.id)) {
-        // New item
-        _scannedProducts.insert(0, product);
-        _receivingItems[product.id] = 1.0; // Default add 1
-      } else {
-        // Increment existing
-        _receivingItems[product.id] = (_receivingItems[product.id] ?? 0) + 1;
-      }
-    });
-  }
-
-  void _updateQty(int productId, double newQty) {
-    if (newQty < 1) return;
-    setState(() {
-      _receivingItems[productId] = newQty;
-    });
-  }
-
-  void _removeProduct(int productId) {
-    setState(() {
-      _receivingItems.remove(productId);
-      _scannedProducts.removeWhere((p) => p.id == productId);
-    });
-  }
-
-  Future<void> _saveReceiving() async {
-    if (_receivingItems.isEmpty) return;
-
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('ยืนยันรับของเข้า'),
-        content: Text(
-            'ต้องการเพิ่มสต็อกจำนวน ${_receivingItems.length} รายการใช่หรือไม่?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('ยกเลิก')),
-          ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('ยืนยัน')),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() => _isLoading = true);
-
-    try {
-      final List<Map<String, dynamic>> items = [];
-      _receivingItems.forEach((pid, qty) {
-        items.add({
-          'productId': pid,
-          'quantity': qty,
-        });
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    final text = query.trim();
+    if (text.isEmpty) {
+      setState(_suggestions.clear);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      final results = await _repo.getAllProducts(searchTerm: text);
+      if (!mounted || _searchController.text.trim() != text) return;
+      setState(() {
+        _suggestions
+          ..clear()
+          ..addAll(results);
       });
+    });
+  }
 
-      // Call the new addStock method
-      final success = await _repo.addStock(items);
+  void _selectSuggestion(PosProduct product) {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    setState(_suggestions.clear);
+    _addProduct(product);
+    _focusNode.requestFocus();
+  }
 
-      if (mounted) {
-        if (success) {
-          SnackbarUtils.showLeft(context, '✅ รับของเข้าเรียบร้อย (สต็อกเพิ่มขึ้น)');
-          setState(() {
-            _receivingItems.clear();
-            _scannedProducts.clear();
-          });
-        } else {
-          SnackbarUtils.showLeft(context, '❌ บันทึกไม่สำเร็จ', isError: true);
-        }
+  void _onSupplierChanged(String query) {
+    _supplierDebounce?.cancel();
+    _supplierId = null;
+    final text = query.trim();
+    if (text.isEmpty) {
+      setState(_supplierSuggestions.clear);
+      return;
+    }
+    _supplierDebounce = Timer(const Duration(milliseconds: 250), () async {
+      final results = await _repo.getSuppliers(searchTerm: text);
+      if (!mounted || _supplierController.text.trim() != text) return;
+      setState(() {
+        _supplierSuggestions
+          ..clear()
+          ..addAll(results);
+      });
+    });
+  }
+
+  void _selectSupplier(Map<String, dynamic> supplier) {
+    final id = int.tryParse(supplier['id']?.toString() ?? '');
+    if (id == null) return;
+    _supplierDebounce?.cancel();
+    _supplierController.text = supplier['name']?.toString() ?? '';
+    setState(() {
+      _supplierId = id;
+      _supplierSuggestions.clear();
+    });
+    _focusNode.requestFocus();
+  }
+
+  void _addProduct(PosProduct product) {
+    final existing =
+        _lines.where((line) => line.productId == product.id).firstOrNull;
+    if (existing != null) {
+      existing.qty.text = _format4(existing.quantity + 1);
+      existing.fromQuantity();
+      setState(() {});
+      return;
+    }
+    setState(() => _lines.insert(
+        0, _DraftLine(productId: product.id, name: product.name)));
+  }
+
+  void _addFreeform([String name = '']) =>
+      setState(() => _lines.insert(0, _DraftLine(name: name)));
+
+  Future<void> _saveDraft() async {
+    if (_lines.isEmpty) return;
+    if (_supplierId == null) {
+      SnackbarUtils.showLeft(context, 'กรุณาเลือกผู้ขายจากรายการ',
+          isError: true);
+      return;
+    }
+    final payload = <Map<String, dynamic>>[];
+    for (final line in _lines) {
+      final error = line.validationError;
+      if (error != null) {
+        SnackbarUtils.showLeft(context, error, isError: true);
+        return;
       }
+      payload.add(line.toJson());
+    }
+    final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: const Text('บันทึกเป็นร่างใบสั่งซื้อ'),
+              content: const Text(
+                  'รายการนี้จะยังไม่เพิ่มสต็อกและไม่เปลี่ยนราคาสินค้า สามารถไปตรวจและรับของจริงบน POS ได้ภายหลัง'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('ยกเลิก')),
+                FilledButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text('บันทึกร่าง'))
+              ],
+            ));
+    if (confirm != true || !mounted) return;
+    setState(() => _isLoading = true);
+    _submissionId ??= const Uuid().v4();
+    try {
+      final result = await _repo.createPurchaseOrderDraft(
+        receiptId: _submissionId!,
+        supplierId: _supplierId!,
+        items: payload,
+      );
+      if (!mounted) return;
+      final id = result['purchaseOrderId'];
+      SnackbarUtils.showLeft(context, '✅ บันทึกร่างใบสั่งซื้อ #$id แล้ว');
+      for (final line in _lines) {
+        line.dispose();
+      }
+      setState(() {
+        _lines.clear();
+        _submissionId = null;
+        _supplierId = null;
+        _supplierController.clear();
+      });
     } catch (e) {
       if (mounted) {
-        SnackbarUtils.showLeft(context, 'Error saving: $e', isError: true);
+        SnackbarUtils.showLeft(
+            context, 'ส่งร่างไม่สำเร็จ กดบันทึกซ้ำได้อย่างปลอดภัย',
+            isError: true);
       }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('รับของเข้า (Stock In)'),
-        backgroundColor: Colors.green.shade700,
-        foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _receivingItems.isEmpty ? null : _saveReceiving,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Search/Scan Bar
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+            title: const Text('ร่างใบรับสินค้า'),
+            backgroundColor: Colors.green.shade700,
+            foregroundColor: Colors.white),
+        body: Column(children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              controller: _searchController,
-              focusNode: _focusNode,
-              decoration: InputDecoration(
-                labelText: 'สแกนสินค้าเพื่อรับเข้า',
-                prefixIcon: const Icon(Icons.qr_code_2),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.qr_code_scanner),
-                  onPressed: () async {
-                    final code = await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ScannerScreen()),
-                    );
-                    if (code != null && code is String) {
-                      _handleScan(code);
-                    }
-                  },
+              padding: const EdgeInsets.all(12),
+              child: Column(children: [
+                TextField(
+                  controller: _supplierController,
+                  onChanged: _onSupplierChanged,
+                  decoration: InputDecoration(
+                    labelText: 'ผู้ขาย *',
+                    hintText: 'พิมพ์เพื่อค้นหาและเลือกผู้ขาย',
+                    prefixIcon: const Icon(Icons.storefront_outlined),
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _supplierId == null
+                        ? null
+                        : const Icon(Icons.check_circle, color: Colors.green),
+                  ),
                 ),
-                border: const OutlineInputBorder(),
-              ),
-              onSubmitted: _handleScan,
-              textInputAction: TextInputAction.next,
-            ),
-          ),
-          if (_isLoading) const LinearProgressIndicator(),
-
-          // Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.green.shade50,
-            child: const Row(
-              children: [
-                Expanded(
-                    flex: 4,
-                    child: Text('สินค้า',
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                Expanded(
-                    flex: 3,
-                    child: Text('จำนวนรับ',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontWeight: FontWeight.bold))),
-                SizedBox(width: 40),
-              ],
-            ),
-          ),
-
-          // List
-          Expanded(
-            child: _scannedProducts.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(Icons.system_update_alt,
-                            size: 80, color: Colors.grey.shade300),
-                        const SizedBox(height: 10),
-                        Text('สแกนสินค้าเพื่อเริ่มรับของ',
-                            style: TextStyle(color: Colors.grey.shade600)),
-                      ],
+                if (_supplierSuggestions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    constraints: const BoxConstraints(maxHeight: 180),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                  )
-                : ListView.separated(
-                    itemCount: _scannedProducts.length,
-                    separatorBuilder: (ctx, i) => const Divider(height: 1),
-                    itemBuilder: (ctx, i) {
-                      final p = _scannedProducts[i];
-                      final qty = _receivingItems[p.id] ?? 0;
-
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 8),
-                        child: Row(
-                          children: [
-                            // Product Name
-                            Expanded(
-                              flex: 4,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(p.name,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold)),
-                                  Text(
-                                      '${p.barcode} (คงเหลือ: ${p.stockQuantity})',
-                                      style: const TextStyle(
-                                          fontSize: 12, color: Colors.grey)),
-                                ],
-                              ),
-                            ),
-                            // Qty Input
-                            Expanded(
-                              flex: 3,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(
-                                        Icons.remove_circle_outline,
-                                        color: Colors.red),
-                                    onPressed: () => _updateQty(p.id, qty - 1),
-                                    constraints: const BoxConstraints(),
-                                    padding: EdgeInsets.zero,
-                                    iconSize: 24,
-                                  ),
-                                  Container(
-                                    constraints:
-                                        const BoxConstraints(minWidth: 40),
-                                    alignment: Alignment.center,
-                                    child: Text(
-                                      qty.toStringAsFixed(0),
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18),
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.add_circle_outline,
-                                        color: Colors.green),
-                                    onPressed: () => _updateQty(p.id, qty + 1),
-                                    constraints: const BoxConstraints(),
-                                    padding: EdgeInsets.zero,
-                                    iconSize: 24,
-                                  ),
-                                ],
-                              ),
-                            ),
-                            // Remove
-                            SizedBox(
-                              width: 32,
-                              child: IconButton(
-                                icon:
-                                    const Icon(Icons.close, color: Colors.grey),
-                                onPressed: () => _removeProduct(p.id),
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _supplierSuggestions.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, index) {
+                        final supplier = _supplierSuggestions[index];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.storefront_outlined),
+                          title: Text(supplier['name']?.toString() ?? ''),
+                          onTap: () => _selectSupplier(supplier),
+                        );
+                      },
+                    ),
                   ),
-          ),
-
-          // Bottom Button
-          if (_scannedProducts.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(16),
-              color: Colors.white,
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: _saveReceiving,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade700,
-                    foregroundColor: Colors.white,
-                  ),
-                  icon: const Icon(Icons.check_circle),
-                  label: Text(
-                      'ยืนยันรับของเข้า (${_scannedProducts.length} รายการ)'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _searchController,
+                  focusNode: _focusNode,
+                  onChanged: _onSearchChanged,
+                  onSubmitted: _findOrAdd,
+                  decoration: InputDecoration(
+                      labelText: 'ชื่อสินค้า หรือรหัสสินค้า',
+                      prefixIcon: const Icon(Icons.search),
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                          icon: const Icon(Icons.qr_code_scanner),
+                          onPressed: () async {
+                            final code = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const ScannerScreen()));
+                            if (code is String) _findOrAdd(code);
+                          })),
                 ),
-              ),
-            ),
+                if (_suggestions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    constraints: const BoxConstraints(maxHeight: 224),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _suggestions.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, index) {
+                        final product = _suggestions[index];
+                        return ListTile(
+                          dense: true,
+                          title: Text(product.name),
+                          subtitle: Text(product.barcode),
+                          onTap: () => _selectSuggestion(product),
+                        );
+                      },
+                    ),
+                  ),
+              ])),
+          if (_isLoading) const LinearProgressIndicator(),
+          Expanded(
+              child: _lines.isEmpty
+                  ? const Center(
+                      child:
+                          Text('พิมพ์ชื่อ/รหัสสินค้า หรือสแกนเพื่อเพิ่มรายการ'))
+                  : ListView.separated(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: _lines.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (_, index) => _lineCard(_lines[index]),
+                    )),
+          if (_lines.isNotEmpty)
+            SafeArea(
+                child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: FilledButton.icon(
+                            onPressed: _isLoading ? null : _saveDraft,
+                            icon: const Icon(Icons.save_outlined),
+                            label: Text(
+                                'บันทึกร่าง (${_lines.length} รายการ)'))))),
+        ]),
+        floatingActionButton: FloatingActionButton.small(
+            onPressed: () => _addFreeform(),
+            tooltip: 'เพิ่มชื่อสินค้าเอง',
+            child: const Icon(Icons.add)),
+      );
+
+  Widget _lineCard(_DraftLine line) => Card(
+      child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(children: [
+            Row(children: [
+              Expanded(
+                  child: TextField(
+                      controller: line.name,
+                      decoration: InputDecoration(
+                          labelText: line.productId == null
+                              ? 'ชื่อสินค้า (ต้องตรวจบน POS)'
+                              : 'สินค้า',
+                          border: const OutlineInputBorder()),
+                      onChanged: (_) => setState(() {}))),
+              IconButton(
+                  onPressed: () => setState(() {
+                        line.dispose();
+                        _lines.remove(line);
+                      }),
+                  icon: const Icon(Icons.delete_outline, color: Colors.red))
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(
+                  child: _numberField('จำนวน', line.qty, line.fromQuantity)),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: _numberField('ทุน/หน่วย', line.cost, line.fromCost)),
+              const SizedBox(width: 8),
+              Expanded(
+                  child: _numberField('รวม', line.total, line.fromTotal,
+                      decimals: 2)),
+            ]),
+            if (line.productId == null)
+              const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                          'รายการใหม่: ต้องจับคู่หรือสร้างสินค้าบน POS ก่อนรับเข้า',
+                          style:
+                              TextStyle(fontSize: 12, color: Colors.orange)))),
+          ])));
+
+  Widget _numberField(String label, TextEditingController controller,
+          VoidCallback onChanged,
+          {int decimals = 4}) =>
+      TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        inputFormatters: [
+          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,4}'))
         ],
-      ),
-    );
+        onChanged: (_) {
+          onChanged();
+          setState(() {});
+        },
+        decoration: InputDecoration(
+            labelText: label,
+            border: const OutlineInputBorder(),
+            isDense: true),
+      );
+}
+
+class _DraftLine {
+  _DraftLine({this.productId, String name = ''})
+      : name = TextEditingController(text: name),
+        qty = TextEditingController(text: '1'),
+        cost = TextEditingController(),
+        total = TextEditingController();
+  final int? productId;
+  final TextEditingController name, qty, cost, total;
+  double get quantity => double.tryParse(qty.text) ?? 0;
+  double get unitCost => double.tryParse(cost.text) ?? 0;
+  double get lineTotal => double.tryParse(total.text) ?? 0;
+  void fromQuantity() {
+    if (unitCost > 0) total.text = _format2(quantity * unitCost);
   }
+
+  void fromCost() {
+    if (quantity > 0) total.text = _format2(quantity * unitCost);
+  }
+
+  void fromTotal() {
+    if (quantity > 0) {
+      cost.text = _format4(lineTotal / quantity);
+    }
+  }
+
+  String? get validationError {
+    if (name.text.trim().isEmpty) {
+      return 'กรุณาระบุชื่อสินค้าทุกรายการ';
+    }
+    if (quantity <= 0 || unitCost <= 0 || lineTotal <= 0) {
+      return 'จำนวน ทุน และยอดรวมต้องมากกว่า 0';
+    }
+    return null;
+  }
+
+  Map<String, dynamic> toJson() => {
+        if (productId != null) 'productId': productId,
+        'productName': name.text.trim(),
+        'quantity': double.parse(_format4(quantity)),
+        'costPrice': double.parse(_format4(unitCost)),
+        'total': double.parse(_format2(lineTotal)),
+      };
+  void dispose() {
+    name.dispose();
+    qty.dispose();
+    cost.dispose();
+    total.dispose();
+  }
+}
+
+String _format4(double value) => value
+    .toStringAsFixed(4)
+    .replaceFirst(RegExp(r'(?<=\.\d*?)0+$'), '')
+    .replaceFirst(RegExp(r'\.$'), '');
+String _format2(double value) => value.toStringAsFixed(2);
+
+extension on Iterable<_DraftLine> {
+  _DraftLine? get firstOrNull => isEmpty ? null : first;
 }

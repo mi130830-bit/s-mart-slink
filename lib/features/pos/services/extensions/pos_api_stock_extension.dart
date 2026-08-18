@@ -1,6 +1,21 @@
 part of '../pos_api_service.dart';
 
 extension PosApiStockExtension on PosApiService {
+  /// Creates a review-only PO draft. It does not receive stock or change prices.
+  Future<Map<String, dynamic>> createPurchaseOrderDraft({
+    required String receiptId,
+    required int supplierId,
+    required List<Map<String, dynamic>> items,
+  }) async {
+    final response = await _sendRequest(
+      method: 'POST',
+      path: '/api/v1/purchase-orders/drafts',
+      body: {'receiptId': receiptId, 'supplierId': supplierId, 'items': items},
+      timeout: const Duration(seconds: 20),
+    );
+    return response as Map<String, dynamic>? ?? {};
+  }
+
   // 4. Adjust Stock
   Future<Map<String, dynamic>> adjustStock({
     required int productId,

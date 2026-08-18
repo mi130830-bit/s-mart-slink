@@ -23,15 +23,10 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> {
     super.initState();
     Future.microtask(() {
       if (mounted) {
-        final authProvider =
-            Provider.of<AuthenticationProvider>(context, listen: false);
-        final userRole = authProvider.currentUser?.role.name;
-
+        // Listeners are started once after login. Refresh only this history
+        // here so opening the screen cannot reset alerts/listeners elsewhere.
         Provider.of<AlertLogProvider>(context, listen: false)
-            .startListeningToAlertsAndLogs(userRole);
-
-        Provider.of<MasterDataProvider>(context, listen: false)
-            .startListeningToMasterData();
+            .refreshWorkLogs();
       }
     });
   }
@@ -86,7 +81,7 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ประวัติงานหลังบ้าน'),
+        title: const Text('ประวัติงานร้าน'),
         backgroundColor: Colors.purple,
         foregroundColor: Colors.white,
       ),
@@ -130,9 +125,13 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> {
                 deliverer = null;
               }
 
-              final delivererName = deliverer != null
-                  ? deliverer.name
-                  : 'ID: ${log.delivererId.substring(0, 5)}...';
+              final delivererName = log.delivererName?.isNotEmpty == true
+                  ? log.delivererName!
+                  : deliverer != null
+                      ? deliverer.name
+                      : log.delivererId.isEmpty
+                          ? 'ไม่ระบุผู้บันทึก'
+                          : 'รหัสพนักงาน: ${log.delivererId}';
 
               return Card(
                 elevation: 2,

@@ -9,9 +9,11 @@ import 'package:s_link/features/auth/services/auth_http_client.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 part 'extensions/pos_api_product_extension.dart';
+part 'extensions/pos_api_supplier_extension.dart';
 part 'extensions/pos_api_stock_extension.dart';
 part 'extensions/pos_api_job_extension.dart';
 part 'extensions/pos_api_line_extension.dart';
+part 'extensions/pos_api_config_extension.dart';
 
 class PosApiService {
   static final PosApiService _instance = PosApiService._internal();
@@ -41,9 +43,11 @@ class PosApiService {
     // ✅ Fallback: Use Public Tunnel if not set (for Drivers on 4G)
     if (_baseUrl == null || _baseUrl!.isEmpty) {
       if (kIsWeb) {
-        _baseUrl = 'http://127.0.0.1:8080'; // Localhost Fallback for Web Testing
+        _baseUrl =
+            'http://127.0.0.1:8080'; // Localhost Fallback for Web Testing
       } else {
-        _baseUrl = 'https://api.namecheap.work'; // Public Tunnel Fallback for Mobile (4G)
+        _baseUrl =
+            'https://api.namecheap.work'; // Public Tunnel Fallback for Mobile (4G)
       }
       debugPrint('⚠️ Base URL not found. Using Fallback: $_baseUrl');
     }
@@ -65,7 +69,10 @@ class PosApiService {
   // ✅ Auto-Sync from Cloud (Firestore)
   Future<void> syncBaseUrlFromCloud() async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('app_settings').doc('api_config').get();
+      final doc = await FirebaseFirestore.instance
+          .collection('app_settings')
+          .doc('api_config')
+          .get();
       if (doc.exists && doc.data() != null) {
         final cloudUrl = doc.data()!['base_url'] as String?;
         if (cloudUrl != null && cloudUrl.isNotEmpty) {
@@ -90,9 +97,10 @@ class PosApiService {
     String resolvedBase = base;
     try {
       final uri = Uri.parse(base);
-      if (uri.host.isNotEmpty && !RegExp(r'^(\d{1,3}\.){3}\d{1,3}$').hasMatch(uri.host)) {
+      if (uri.host.isNotEmpty &&
+          !RegExp(r'^(\d{1,3}\.){3}\d{1,3}$').hasMatch(uri.host)) {
         String hostToResolve = uri.host;
-        
+
         // 🚨 CRITICAL FIX: Only resolve manually if it's a .local domain or a single-word hostname.
         // Public domains (like .work, .com) MUST be resolved by http.Client natively to preserve SNI (Server Name Indication) for HTTPS (Cloudflare).
         if (!hostToResolve.contains('.') || hostToResolve.endsWith('.local')) {
@@ -106,9 +114,13 @@ class PosApiService {
           }
 
           if (ips.isNotEmpty) {
-            final ip = ips.firstWhere((i) => i.type == InternetAddressType.IPv4, orElse: () => ips.first).address;
+            final ip = ips
+                .firstWhere((i) => i.type == InternetAddressType.IPv4,
+                    orElse: () => ips.first)
+                .address;
             resolvedBase = uri.replace(host: ip).toString();
-            debugPrint('🔍 [DNS] Resolved Local API "$base" -> "$resolvedBase"');
+            debugPrint(
+                '🔍 [DNS] Resolved Local API "$base" -> "$resolvedBase"');
           }
         }
       }
@@ -145,14 +157,19 @@ class PosApiService {
         if (body != null) 'Content-Type': 'application/json',
       };
       http.Response response;
-      final bodyStr = body is String ? body : (body != null ? jsonEncode(body) : null);
-      
+      final bodyStr =
+          body is String ? body : (body != null ? jsonEncode(body) : null);
+
       if (method == 'GET') {
         response = await _client.get(uri, headers: headers).timeout(timeout);
       } else if (method == 'POST') {
-        response = await _client.post(uri, headers: headers, body: bodyStr).timeout(timeout);
+        response = await _client
+            .post(uri, headers: headers, body: bodyStr)
+            .timeout(timeout);
       } else if (method == 'PUT') {
-        response = await _client.put(uri, headers: headers, body: bodyStr).timeout(timeout);
+        response = await _client
+            .put(uri, headers: headers, body: bodyStr)
+            .timeout(timeout);
       } else if (method == 'DELETE') {
         response = await _client.delete(uri, headers: headers).timeout(timeout);
       } else {
@@ -235,7 +252,8 @@ class PosApiService {
         return result;
       }
     } catch (e) {
-      debugPrint('⚠️ [PaymentConfig] Cannot fetch from server, will use local: $e');
+      debugPrint(
+          '⚠️ [PaymentConfig] Cannot fetch from server, will use local: $e');
     }
     return null;
   }

@@ -20,6 +20,7 @@ class AlertLogProvider with ChangeNotifier {
   // Changed from StockAlertModel (Firestore) to ShortageLogModel (MySQL)
   List<ShortageLogModel> _openAlerts = [];
   List<ShopWorkLogModel> _allWorkLogs = [];
+  final Map<String, String> _workLogDelivererNames = {};
   bool _isLoading = false;
 
   List<ShortageLogModel> get openAlerts => _openAlerts;
@@ -54,8 +55,8 @@ class AlertLogProvider with ChangeNotifier {
     if (role?.toLowerCase() == 'admin') {
       final syncService = WorkLogSyncService(IsarService());
       
-      // ดึงข้อมูลล่าสุดจาก API ลง Local
-      syncService.syncDownWorkLogs();
+      // ดึงข้อมูลล่าสุดจาก API ลง Local โดยไม่รอทับคิวงานออฟไลน์
+      unawaited(refreshWorkLogs());
       
       _allWorkLogsSubscription =
           syncService.watchWorkLogs().listen((isarData) {
@@ -63,6 +64,8 @@ class AlertLogProvider with ChangeNotifier {
           return ShopWorkLogModel(
             id: isarLog.syncId ?? isarLog.id.toString(),
             delivererId: isarLog.delivererId ?? '',
+            delivererName: _workLogDelivererNames[
+                isarLog.syncId ?? isarLog.id.toString()],
             loggedAt: isarLog.loggedAt ?? DateTime.now(),
             items: isarLog.items?.map((item) => WorkItem(
               description: item.description ?? '',
@@ -176,6 +179,17 @@ class AlertLogProvider with ChangeNotifier {
   Future<void> deleteWorkLog(String logId) async {
     final syncService = WorkLogSyncService(IsarService());
     await syncService.deleteWorkLog(logId);
+  }
+
+  /// Refreshes only shop-work history. This must not restart the shortage
+  /// listener used by other screens.
+  Future<void> refreshWorkLogs() async {
+    final syncService = WorkLogSyncService(IsarService());
+    final names = await syncService.syncDownWorkLogs();
+    if (names.isNotEmpty) {
+      _workLogDelivererNames.addAll(names);
+      notifyListeners();
+    }
   }
 
   // ✅ 5. ค้นหาสินค้า (Autocomplete)

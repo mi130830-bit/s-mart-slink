@@ -6,6 +6,8 @@ import 'package:provider/provider.dart';
 import 'package:s_link/features/jobs/models/shop_work_log.dart';
 import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'package:s_link/features/alerts/providers/alert_log_provider.dart';
+import 'package:s_link/features/shop_log/models/stock_check_template.dart';
+import 'package:s_link/features/shop_log/services/stock_check_template_service.dart';
 
 class CreateWorkLogScreen extends StatefulWidget {
   const CreateWorkLogScreen({super.key});
@@ -15,23 +17,7 @@ class CreateWorkLogScreen extends StatefulWidget {
 }
 
 class _CreateWorkLogScreenState extends State<CreateWorkLogScreen> {
-  // 📝 กำหนดรายการงานมาตรฐานที่นี่ (สามารถเพิ่ม/ลบ/แก้ไขชื่อได้ตามต้องการ)
-  final List<String> _standardTasks = [
-    'เสาไฟฟ้า 7ม.',
-    'เสารั้ว',
-    'เสารั้วมีรู',
-    'เสาค้ำ',
-    'เสาหลักแดน',
-    'ฝาวงบ่อ60ซม. ตัน',
-    'ฝาวงบ่อ60ซม. รูเล็ก',
-    'ฝาวงบ่อ80ซม. ตัน',
-    'ฝาวงบ่อ80ซม. รูเล็ก',
-    'ฝาวงบ่อ100ซม. ตัน',
-    'ฝาวงบ่อ100ซม.รูเล็ก',
-    'ฝาวงบ่อ120ซม. ตัน',
-    'ฝาวงบ่อ120ซม. รูเล็ก',
-    // เพิ่มรายการต่อที่นี่...
-  ];
+  List<StockCheckTemplateItem> _tasks = StockCheckTemplate.fallback.items;
 
   final Map<String, TextEditingController> _qtyControllers = {};
   final _noteController = TextEditingController();
@@ -40,9 +26,16 @@ class _CreateWorkLogScreenState extends State<CreateWorkLogScreen> {
   @override
   void initState() {
     super.initState();
-    // สร้าง Controller สำหรับแต่ละรายการ
-    for (var task in _standardTasks) {
-      _qtyControllers[task] = TextEditingController();
+    _loadTemplate();
+  }
+
+  Future<void> _loadTemplate() async {
+    final template = await StockCheckTemplateService().load();
+    if (!mounted) return;
+    setState(() => _tasks = template.items.where((e) => e.enabled).toList()
+      ..sort((a, b) => a.order.compareTo(b.order)));
+    for (final task in _tasks) {
+      _qtyControllers.putIfAbsent(task.id, TextEditingController.new);
     }
   }
 
@@ -58,16 +51,16 @@ class _CreateWorkLogScreenState extends State<CreateWorkLogScreen> {
   Future<void> _submitLogSet() async {
     // รวบรวมข้อมูลจากฟอร์ม
     final List<WorkItem> itemsToSend = [];
-    for (var task in _standardTasks) {
-      final controller = _qtyControllers[task];
+    for (final task in _tasks) {
+      final controller = _qtyControllers[task.id];
       final text = controller?.text.trim() ?? '';
       if (text.isNotEmpty) {
         final qty = double.tryParse(text);
         if (qty != null && qty > 0) {
           itemsToSend.add(WorkItem(
-            description: task,
+            description: task.name,
             quantity: qty,
-            unit: 'หน่วย',
+            unit: task.unit,
           ));
         }
       }
@@ -148,20 +141,21 @@ class _CreateWorkLogScreenState extends State<CreateWorkLogScreen> {
               ],
             ),
             child: Column(
-              children: _standardTasks.map((task) {
+              children: _tasks.map((task) {
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
                   child: Row(
                     children: [
                       Expanded(
                         flex: 3,
-                        child: Text(task, style: const TextStyle(fontSize: 16)),
+                        child: Text(task.name,
+                            style: const TextStyle(fontSize: 16)),
                       ),
                       const SizedBox(width: 16),
                       Expanded(
                         flex: 2,
                         child: TextField(
-                          controller: _qtyControllers[task],
+                          controller: _qtyControllers[task.id],
                           keyboardType: const TextInputType.numberWithOptions(
                               decimal: true),
                           textAlign: TextAlign.center,
@@ -175,7 +169,8 @@ class _CreateWorkLogScreenState extends State<CreateWorkLogScreen> {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const Text('หน่วย', style: TextStyle(color: Colors.grey)),
+                      Text(task.unit,
+                          style: const TextStyle(color: Colors.grey)),
                     ],
                   ),
                 );

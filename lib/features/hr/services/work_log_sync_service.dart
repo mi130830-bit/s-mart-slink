@@ -117,22 +117,38 @@ class WorkLogSyncService {
   }
 
   // 3.5 Sync Down (Fetch latest from server)
-  Future<void> syncDownWorkLogs() async {
+  /// Downloads the POS-confirmed history without overwriting local logs that
+  /// are still waiting to be sent. Returns names keyed by log sync ID for UI.
+  Future<Map<String, String>> syncDownWorkLogs() async {
+    final delivererNames = <String, String>{};
     try {
       final isar = await _isarService.db;
       final response = await _apiService.getRaw('/hr/worklogs');
       if (response != null && response['logs'] != null) {
         final List<dynamic> logs = response['logs'];
+        final serverSyncIds = <String>{};
         
         await isar.writeTxn(() async {
           for (var logData in logs) {
-            final syncId = logData['sync_id'];
-            final delivererId = logData['deliverer_id'];
-            final loggedAt = DateTime.tryParse(logData['logged_at'] ?? '');
+            final syncId = logData['sync_id']?.toString();
+            final delivererId = logData['deliverer_id']?.toString();
+            final loggedAt = DateTime.tryParse(
+              logData['logged_at']?.toString() ?? '',
+            );
+            final delivererName = logData['deliverer_name']?.toString();
+            if (syncId != null &&
+                delivererName != null &&
+                delivererName.isNotEmpty) {
+              delivererNames[syncId] = delivererName;
+            }
+            if (syncId != null) serverSyncIds.add(syncId);
             
             final existing = await isar.shopWorkLogIsars.filter().syncIdEqualTo(syncId).findFirst();
-            if (existing == null) {
+            // A local pending record is newer than the server copy. Keep it
+            // until the normal retry queue has confirmed the upload.
+            if (existing == null || existing.isSynced) {
               final newLog = ShopWorkLogIsar()
+                ..id = existing?.id ?? Isar.autoIncrement
                 ..syncId = syncId
                 ..delivererId = delivererId
                 ..loggedAt = loggedAt ?? DateTime.now()
@@ -146,12 +162,30 @@ class WorkLogSyncService {
               await isar.shopWorkLogIsars.put(newLog);
             }
           }
+
+          // The API deliberately limits its response. Remove stale local
+          // records only when it confirms this response contains all logs;
+          // local/offline records are never eligible for removal here.
+          if (response['is_complete'] == true) {
+            final syncedLocalLogs = await isar.shopWorkLogIsars
+                .filter()
+                .isSyncedEqualTo(true)
+                .isDeletedEqualTo(false)
+                .findAll();
+            for (final localLog in syncedLocalLogs) {
+              final localSyncId = localLog.syncId;
+              if (localSyncId != null && !serverSyncIds.contains(localSyncId)) {
+                await isar.shopWorkLogIsars.delete(localLog.id);
+              }
+            }
+          }
         });
         log('Successfully synced down ${logs.length} work logs.');
       }
     } catch (e) {
       log('Error syncing down work logs: $e');
     }
+    return delivererNames;
   }
 
   // 4. Get logs for UI (Stream)

@@ -63,6 +63,42 @@ class PosRepository {
     }
   }
 
+  /// Uses the server-authoritative checkout path.  Do not add prices, totals,
+  /// discounts or VAT to this payload; the POS server calculates them.
+  Future<Map<String, dynamic>> createAuthoritativeCheckout({
+    required String clientRequestId,
+    required List<Map<String, dynamic>> items,
+    required String paymentMethod,
+    required double receivedAmount,
+    int? customerId,
+    int pointsUsed = 0,
+    String? couponCode,
+  }) {
+    return _api.postRaw('/mobile-checkout/', {
+      'clientRequestId': clientRequestId,
+      'items': items,
+      'customerId': customerId,
+      'paymentMethod': paymentMethod,
+      'receivedAmount': receivedAmount,
+      'pointsUsed': pointsUsed,
+      if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
+    });
+  }
+
+  Future<Map<String, dynamic>> getAuthoritativeCheckoutQuote({
+    required List<Map<String, dynamic>> items,
+    int? customerId,
+    int pointsUsed = 0,
+    String? couponCode,
+  }) =>
+      _api.postRaw('/mobile-checkout/quote', {
+        'items': items,
+        'customerId': customerId,
+        'pointsUsed': pointsUsed,
+        if (couponCode != null && couponCode.isNotEmpty)
+          'couponCode': couponCode,
+      });
+
   Future<bool> updateStock(List<Map<String, dynamic>> items) async {
     // 1. API Only (Tunnel)
     try {
@@ -100,4 +136,18 @@ class PosRepository {
       return false;
     }
   }
+
+  Future<Map<String, dynamic>> createPurchaseOrderDraft({
+    required String receiptId,
+    required int supplierId,
+    required List<Map<String, dynamic>> items,
+  }) =>
+      _api.createPurchaseOrderDraft(
+        receiptId: receiptId,
+        supplierId: supplierId,
+        items: items,
+      );
+
+  Future<List<Map<String, dynamic>>> getSuppliers({String searchTerm = ''}) =>
+      _api.getSuppliers(search: searchTerm);
 }

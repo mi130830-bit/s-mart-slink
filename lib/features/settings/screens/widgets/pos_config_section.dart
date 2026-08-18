@@ -5,15 +5,18 @@ import 'package:s_link/features/master_data/screens/driver_list_screen.dart';
 import 'package:s_link/features/settings/screens/pos_config_screen.dart';
 import 'package:s_link/features/settings/screens/printer_settings_screen.dart';
 import 'package:s_link/features/settings/screens/widgets/settings_shared_ui.dart';
+import 'package:s_link/features/settings/screens/stock_check_template_editor_screen.dart';
 
 class PosConfigSection extends StatelessWidget {
   final bool isAdmin;
   final bool isDriver;
+  final bool canManageTemplate;
 
   const PosConfigSection({
     super.key,
     required this.isAdmin,
     required this.isDriver,
+    required this.canManageTemplate,
   });
 
   @override
@@ -97,6 +100,10 @@ class PosConfigSection extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const PrinterSettingsScreen()),
                   ),
                 ),
+              ],
+              if (canManageTemplate) ...[
+                SettingsSharedUI.buildDivider(),
+                SettingsSharedUI.buildModernTile(icon: Icons.checklist, color: Colors.teal, title: 'แบบตรวจนับสต๊อก', subtitle: 'แก้ไขรายการสำหรับ S-Link', onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const StockCheckTemplateEditorScreen()))),
               ],
             ],
           ),

@@ -187,6 +187,22 @@ class AttendanceService {
           isarLog.isSynced = true; // Since it came from server
           await isar.attendanceLogIsars.put(isarLog);
         });
+      } else if (response == null ||
+          (response is Map<String, dynamic> && response['id'] == null)) {
+        // A successful server response with no record is authoritative. Clear
+        // only a previously synced cache entry; an unsynced entry may still
+        // contain an offline attendance action that has not reached POS yet.
+        final syncId = _getSyncId(userId, today);
+        final isar = await _isarService.db;
+        await isar.writeTxn(() async {
+          final isarLog = await isar.attendanceLogIsars
+              .filter()
+              .syncIdEqualTo(syncId)
+              .findFirst();
+          if (isarLog?.isSynced == true) {
+            await isar.attendanceLogIsars.delete(isarLog!.id);
+          }
+        });
       }
     } catch (e) {
       log('AttendanceService: Failed to fetch today log from server: $e');

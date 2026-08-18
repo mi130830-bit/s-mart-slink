@@ -35,12 +35,14 @@ class ShopWorkLogModel {
   final String id; // Document ID
   final List<WorkItem> items; // รายละเอียดงานที่ทำ (Array of Map ใน Firestore)
   final String delivererId; // UID ของคนที่ทำงานนั้นๆ
+  final String? delivererName; // ชื่อผู้บันทึกจาก POS API (ถ้ามี)
   final DateTime loggedAt; // เวลาที่บันทึกงาน
 
   ShopWorkLogModel({
     required this.id,
     required this.items,
     required this.delivererId,
+    this.delivererName,
     required this.loggedAt,
   });
 
@@ -52,6 +54,7 @@ class ShopWorkLogModel {
         id: doc.id,
         items: [],
         delivererId: '',
+        delivererName: null,
         loggedAt: DateTime.now(),
       );
     }
@@ -59,6 +62,7 @@ class ShopWorkLogModel {
     return ShopWorkLogModel(
       id: doc.id,
       delivererId: data['deliverer_id'] ?? '',
+      delivererName: data['deliverer_name']?.toString(),
       loggedAt: (data['logged_at'] as Timestamp).toDate(),
 
       // แปลง List ของ Map เป็น List ของ WorkItem Objects
@@ -73,6 +77,7 @@ class ShopWorkLogModel {
   Map<String, dynamic> toFirestore() {
     return {
       'deliverer_id': delivererId,
+      if (delivererName != null) 'deliverer_name': delivererName,
       'logged_at': Timestamp.fromDate(loggedAt),
       // แปลง List ของ WorkItem Objects กลับเป็น List ของ Map
       'items': items.map((item) => item.toJson()).toList(),

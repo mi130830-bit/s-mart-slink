@@ -13,6 +13,7 @@ import 'package:s_link/features/jobs/models/job_item.dart'; // ✅ Import JobIte
 import 'package:s_link/features/pos/services/pos_api_service.dart';
 import 'package:s_link/features/pos/widgets/payment_success_dialog.dart';
 import 'package:s_link/features/pos/widgets/quick_cash_selector.dart';
+import 'package:uuid/uuid.dart';
 
 class PaymentScreen extends StatefulWidget {
   const PaymentScreen({super.key});
@@ -24,6 +25,8 @@ class PaymentScreen extends StatefulWidget {
 class _PaymentScreenState extends State<PaymentScreen> {
   final PosRepository _repo = PosRepository();
   final TextEditingController _cashController = TextEditingController();
+  final TextEditingController _pointsController = TextEditingController();
+  final TextEditingController _couponController = TextEditingController();
 
   // State
   String? _promptPayId;
@@ -33,6 +36,23 @@ class _PaymentScreenState extends State<PaymentScreen> {
   bool _isLoading = false;
   double _receivedAmount = 0.0;
   String _paymentMethod = 'CASH'; // 'CASH', 'PROMPTPAY', or 'CREDIT'
+  String? _checkoutRequestId;
+  bool _quoteLoading = false;
+  int? _quoteMaxPoints;
+  int? _quoteAvailablePoints;
+  String? _quoteCartSignature;
+
+  int get _pointsUsed => int.tryParse(_pointsController.text.trim()) ?? 0;
+  String get _couponCode => _couponController.text.trim().toUpperCase();
+  bool get _usesBenefit => _pointsUsed > 0 || _couponCode.isNotEmpty;
+
+  @override
+  void dispose() {
+    _cashController.dispose();
+    _pointsController.dispose();
+    _couponController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -72,28 +92,87 @@ class _PaymentScreenState extends State<PaymentScreen> {
     });
   }
 
+  Future<void> _loadQuote({bool applyMax = false}) async {
+    final cart = context.read<CartProvider>();
+    if (cart.customer == null) {
+      SnackbarUtils.showLeft(context, 'กรุณาเลือกลูกค้าก่อนตรวจสอบแต้ม');
+      return;
+    }
+    if (applyMax && _couponCode.isNotEmpty) {
+      setState(() {
+        _couponController.clear();
+        _checkoutRequestId = null;
+      });
+    }
+    setState(() => _quoteLoading = true);
+    try {
+      final result = await _repo.getAuthoritativeCheckoutQuote(
+        customerId: cart.customer!.id,
+        items: cart.items
+            .map((item) => {
+                  'productId': item.product.id,
+                  'quantity': item.quantity,
+                })
+            .toList(),
+        pointsUsed: _pointsUsed,
+        couponCode: _couponCode.isEmpty ? null : _couponCode,
+      );
+      if (!mounted) return;
+      final max = int.tryParse(result['maxRedeemable']?.toString() ?? '') ?? 0;
+      setState(() {
+        _quoteMaxPoints = max;
+        _quoteAvailablePoints =
+            int.tryParse(result['availablePoints']?.toString() ?? '') ?? 0;
+        if (applyMax) {
+          _pointsController.text = max.toString();
+          _checkoutRequestId = null;
+        }
+      });
+    } catch (e) {
+      if (mounted) {
+        SnackbarUtils.showLeft(context, 'ตรวจสอบสิทธิ์แต้มไม่สำเร็จ: $e',
+            isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _quoteLoading = false);
+    }
+  }
+
   Future<void> _processPayment() async {
     final cart = context.read<CartProvider>();
     final total = cart.totalAmount;
 
+    if (_usesBenefit && cart.customer == null) {
+      SnackbarUtils.showLeft(context, 'กรุณาเลือกลูกค้าก่อนใช้แต้มหรือคูปอง');
+      return;
+    }
+    if (_usesBenefit && _paymentMethod != 'CASH') {
+      SnackbarUtils.showLeft(context,
+          'สิทธิ์แต้มและคูปองใช้กับเงินสดเท่านั้นในตอนนี้ เพื่อให้ยอด QR/เครดิตไม่คลาดเคลื่อน');
+      return;
+    }
+
     // Validation
-    if (_paymentMethod == 'CASH' && _receivedAmount < total) {
+    if (_paymentMethod == 'CASH' && !_usesBenefit && _receivedAmount < total) {
       if (!mounted) return;
-      SnackbarUtils.showLeft(context, 'ยอดเงินรับไม่เพียงพอ (Insufficient Cash)');
+      SnackbarUtils.showLeft(
+          context, 'ยอดเงินรับไม่เพียงพอ (Insufficient Cash)');
       return;
     }
 
     // CREDIT requires a customer
     if (_paymentMethod == 'CREDIT' && cart.customer == null) {
       if (!mounted) return;
-      SnackbarUtils.showLeft(context, 'การขายสินเชื่อต้องระบุลูกค้า (Select customer first)');
+      SnackbarUtils.showLeft(
+          context, 'การขายสินเชื่อต้องระบุลูกค้า (Select customer first)');
       return;
     }
 
     // New Validation: Delivery requires Customer
     if (_isDelivery && cart.customer == null) {
       if (!mounted) return;
-      SnackbarUtils.showLeft(context, 'การส่งของด่วนต้องระบุลูกค้า (Please select customer for delivery)');
+      SnackbarUtils.showLeft(context,
+          'การส่งของด่วนต้องระบุลูกค้า (Please select customer for delivery)');
       return; // Stop here, do not create order
     }
 
@@ -106,7 +185,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
         note = 'DELIVERY_REQ'; // Key for backend to trigger delivery workflow
       }
 
-      // 2. Prepare Items
+      // 2. Prepare items. Benefit checkout deliberately sends raw IDs/qty only.
       final items = cart.items.map((item) {
         return {
           'productId': item.product.id,
@@ -121,13 +200,45 @@ class _PaymentScreenState extends State<PaymentScreen> {
       }).toList();
 
       // 3. Create Order
-      final orderId = await _repo.createOrder(
-        totalAmount: total,
-        items: items,
-        customerId: cart.customer?.id,
-        paymentMethod: _paymentMethod, // dynamic based on selection
-        note: note.isNotEmpty ? note : null,
-      );
+      int orderId;
+      double completedGrandTotal = total;
+      if (_usesBenefit) {
+        _checkoutRequestId ??= const Uuid().v4();
+        final rawItems = cart.items
+            .map((item) => {
+                  'productId': item.product.id,
+                  'quantity': item.quantity,
+                })
+            .toList();
+        final result = await _repo.createAuthoritativeCheckout(
+          clientRequestId: _checkoutRequestId!,
+          items: rawItems,
+          customerId: cart.customer?.id,
+          paymentMethod: _paymentMethod,
+          receivedAmount: _receivedAmount,
+          pointsUsed: _pointsUsed,
+          couponCode: _couponCode.isEmpty ? null : _couponCode,
+        );
+        orderId = int.tryParse(result['orderId']?.toString() ?? '') ?? 0;
+        completedGrandTotal =
+            double.tryParse(result['grandTotal']?.toString() ?? '') ?? total;
+        _receivedAmount =
+            double.tryParse(result['received']?.toString() ?? '') ??
+                _receivedAmount;
+        final change = double.tryParse(result['change']?.toString() ?? '') ?? 0;
+        if (mounted) {
+          SnackbarUtils.showLeft(context,
+              'ยอดสุทธิจาก POS ฿${completedGrandTotal.toStringAsFixed(2)} • เงินทอน ฿${change.toStringAsFixed(2)}');
+        }
+      } else {
+        orderId = await _repo.createOrder(
+          totalAmount: total,
+          items: items,
+          customerId: cart.customer?.id,
+          paymentMethod: _paymentMethod,
+          note: note.isNotEmpty ? note : null,
+        );
+      }
 
       if (orderId > 0) {
         if (!mounted) return;
@@ -175,8 +286,11 @@ class _PaymentScreenState extends State<PaymentScreen> {
               deliveryTeam: [],
               items: jobItems, // ✅ Pass items
               details: jobDetails, // ✅ Pass details text summary
-              paymentMethod: _paymentMethod, // บอกให้คนขับรู้ว่าลูกค้าจ่ายแบบไหนมาแล้ว
-              price: _paymentMethod == 'CREDIT' ? total : 0.0, // สินเชื่อต้องเก็บปลายทาง (COD)
+              paymentMethod:
+                  _paymentMethod, // บอกให้คนขับรู้ว่าลูกค้าจ่ายแบบไหนมาแล้ว
+              price: _paymentMethod == 'CREDIT'
+                  ? completedGrandTotal
+                  : 0.0, // สินเชื่อต้องเก็บปลายทาง (COD)
             );
 
             await context.read<JobProvider>().createNewJob(newJob);
@@ -193,12 +307,14 @@ class _PaymentScreenState extends State<PaymentScreen> {
             }
           } catch (e) {
             if (!mounted) return;
-            SnackbarUtils.showLeft(context, 'สร้างงานส่งของล้มเหลว: $e', isError: true);
+            SnackbarUtils.showLeft(context, 'สร้างงานส่งของล้มเหลว: $e',
+                isError: true);
           }
         }
 
         // ✅ Clear Cart
         cartProvider.clear();
+        _checkoutRequestId = null;
 
         // ✅ Show Success Dialog with Print Option
         if (!mounted) return;
@@ -227,6 +343,13 @@ class _PaymentScreenState extends State<PaymentScreen> {
   @override
   Widget build(BuildContext context) {
     final cart = context.watch<CartProvider>();
+    final cartSignature =
+        '${cart.customer?.id ?? 0}:${cart.items.map((item) => '${item.product.id}x${item.quantity}').join(',')}';
+    if (_quoteCartSignature != cartSignature) {
+      _quoteCartSignature = cartSignature;
+      _quoteMaxPoints = null;
+      _quoteAvailablePoints = null;
+    }
     final total = cart.totalAmount;
     final change = _receivedAmount - total;
 
@@ -260,6 +383,69 @@ class _PaymentScreenState extends State<PaymentScreen> {
                           labelStyle: const TextStyle(color: Colors.white),
                         ),
                       ),
+                    if (cart.customer != null) ...[
+                      const SizedBox(height: 12),
+                      Row(children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _pointsController,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: 'ใช้แต้ม (เลือกอย่างใดอย่างหนึ่ง)',
+                              prefixIcon: const Icon(Icons.stars_outlined),
+                              helperText: _quoteAvailablePoints == null
+                                  ? 'กด MAX เพื่อตรวจสอบแต้มจาก POS'
+                                  : 'มี ${_quoteAvailablePoints!} แต้ม • ใช้ได้สูงสุด ${_quoteMaxPoints ?? 0}',
+                              border: const OutlineInputBorder(),
+                            ),
+                            onChanged: (value) {
+                              setState(() {
+                                _checkoutRequestId = null;
+                                _quoteMaxPoints = null;
+                                _quoteAvailablePoints = null;
+                                if (value.trim().isNotEmpty &&
+                                    _couponCode.isNotEmpty) {
+                                  _couponController.clear();
+                                }
+                              });
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: _quoteLoading
+                              ? null
+                              : () => _loadQuote(applyMax: true),
+                          child: _quoteLoading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2))
+                              : const Text('MAX'),
+                        ),
+                      ]),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _couponController,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(
+                          labelText: 'คูปอง LINE OA (เลือกอย่างใดอย่างหนึ่ง)',
+                          prefixIcon: Icon(Icons.discount_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (value) {
+                          setState(() {
+                            _checkoutRequestId = null;
+                            _quoteMaxPoints = null;
+                            _quoteAvailablePoints = null;
+                            if (value.trim().isNotEmpty && _pointsUsed > 0) {
+                              _pointsController.clear();
+                            }
+                          });
+                        },
+                      ),
+                    ],
                   ],
                 ),
               ),

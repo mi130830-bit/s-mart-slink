@@ -19,6 +19,7 @@ class SettingsScreen extends StatelessWidget {
     // Determine Roles
     final isDriver = authProvider.isUserDriver;
     final isAdmin = authProvider.isUserAdmin;
+    final canManageTemplate = isAdmin || authProvider.isUserHr;
 
     return Scaffold(
       appBar: AppBar(
@@ -71,6 +72,7 @@ class SettingsScreen extends StatelessWidget {
                 children: [
                   PosConfigSection(
                     isAdmin: isAdmin,
+                    canManageTemplate: canManageTemplate,
                     isDriver: isDriver,
                   ),
                   const ConnectionSettingsSection(),
