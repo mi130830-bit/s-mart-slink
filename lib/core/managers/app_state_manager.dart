@@ -24,15 +24,20 @@ class AppStateManager {
         Provider.of<AlertLogProvider>(context, listen: false);
 
     if (authProvider.isAuthenticated && !authProvider.isLoading) {
-      if (_isListenersSetup) return;
-
       final user = authProvider.currentUser;
       final role = user?.role.name.toLowerCase();
 
       if (role == AppConstants.rolePending) return;
+      if (user == null) return;
       // เริ่ม retry queue ของการลงเวลาทันทีหลังยืนยันตัวตน โดยไม่ผูกกับ
       // การโหลดข้อมูลงานส่งของแต่ละ role เพื่อให้รายการออฟไลน์ซิงก์เอง
       // เมื่อเน็ตกลับมา โดยไม่ต้องกดรีเฟรช
+      // Set the owner first for every authenticated role, including
+      // gas_station, so a previous user's durable queue is never submitted
+      // with the current JWT.
+      SyncService().setActiveUser(user.id);
+
+      if (_isListenersSetup) return;
       SyncService().startMonitoring();
 
       // พนักงานปั๊มไม่ต้องโหลดข้อมูลงานส่งเพิ่มเติม
@@ -43,11 +48,9 @@ class AppStateManager {
 
       log('Starting data listeners for role: $role');
 
-      if (user != null) {
-        // Topic subscriptions handled by UserService._handlePostLogin
-        jobProvider.startListeningToJobs(user);
-        alertLogProvider.startListeningToAlertsAndLogs(role);
-      }
+      // Topic subscriptions handled by UserService._handlePostLogin
+      jobProvider.startListeningToJobs(user);
+      alertLogProvider.startListeningToAlertsAndLogs(role);
       masterDataProvider.startListeningToMasterData();
 
       _isListenersSetup = true;

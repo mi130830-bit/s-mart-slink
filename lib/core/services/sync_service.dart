@@ -67,9 +67,14 @@ class SyncService {
 
   Future<void> _syncAttendanceQueue() async {
     if (_isSyncingAttendance) return;
+    final activeUserId = _activeUserId;
+    if (activeUserId == null || activeUserId.isEmpty) {
+      log('$_tag No active user; skipping attendance queue sync.');
+      return;
+    }
     _isSyncingAttendance = true;
     try {
-      await AttendanceService().syncUnsyncedLogs();
+      await AttendanceService().syncUnsyncedLogs(userId: activeUserId);
     } catch (e) {
       log('$_tag Attendance queue sync failed: $e');
     } finally {

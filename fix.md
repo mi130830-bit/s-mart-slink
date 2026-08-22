@@ -2,6 +2,14 @@
 
 ---
 
+## [2026-08-22] GPS Departure Team Fix / แก้ไขการส่งชื่อรถตอนปล่อยรถ
+
+**ไทย:** แก้ไข `JobProvider.approveJobDeparture` ให้ใช้ `deliveryTeam` ที่เพิ่งเลือกจากหน้า Dialog ส่งไปยัง `/gps/update_job` แทนการอ่านจาก `jobToUpdate.deliveryTeam` เดิมที่ยังว่างเปล่า ทำให้ Backend ได้รับชื่อรถที่ถูกต้อง และอัปเดตสถานะงาน "กำลังส่งของ: [ชื่อลูกค้า]" ขึ้นแผนที่แบบ Realtime ทันทีที่กดปล่อยรถ.
+
+**English:** Fixed `JobProvider.approveJobDeparture` to extract the vehicle name from the freshly supplied `deliveryTeam` parameter rather than the stale unassigned job record. This ensures the POS Backend receives the correct canonical vehicle key and immediately updates the live GPS map with "กำลังส่งของ: [Customer Name]".
+
+---
+
 ## [2026-08-18] Safe points/coupon checkout / ชำระเงินด้วยแต้มและคูปองอย่างปลอดภัย
 
 **ไทย:** หน้า Payment เพิ่มช่องใช้แต้มและคูปอง LINE OA โดยเลือกได้อย่างใดอย่างหนึ่ง
@@ -385,6 +393,22 @@ retry instead of showing a false success.
 - EN: When POS confirms that a user has no attendance record today, S-Link now
   removes only an already-synced local cache entry. Unsynced attendance remains
   protected, preventing both stale cross-user display and offline data loss.
+
+# 2026-08-21 — Confirmed mobile attendance / ลงเวลามือถือที่ยืนยันแล้ว
+
+- TH: การลงเวลาจาก S-Link จะแสดงสีเขียวต่อเมื่อ POS ตอบรับครบทุกรายการเท่านั้น;
+  หากเน็ตมีปัญหาจะคงรายการไว้ในเครื่องพร้อมสถานะรอส่ง ปุ่ม “ส่งอีกครั้ง” เพียงปุ่มเดียว
+  และระบบส่งอัตโนมัติเดิมยังทำงานต่อ. GPS และรัศมีร้านเดิมยังเป็นเงื่อนไขเดียวก่อนลงเวลา.
+- EN: S-Link shows green attendance only after POS acknowledges every queued
+  record. Network failures remain durably pending with one “Retry” action while
+  automatic retry continues; the existing GPS-only store-radius gate is unchanged.
+
+- TH: คิวลงเวลาจะส่งเฉพาะของบัญชีที่ล็อกอินอยู่เท่านั้น เพื่อไม่ให้คิวค้างของ
+  ผู้ใช้ก่อนหน้าทำให้ POS ปฏิเสธทั้งชุด; คิวของบัญชีอื่นยังเก็บอยู่ในเครื่องและจะ
+  รอส่งเมื่อเจ้าของบัญชีนั้นเข้าสู่ระบบอีกครั้ง.
+- EN: Attendance sync is now scoped to the active signed-in account. A prior
+  user's pending records remain safely stored and wait for that owner to sign
+  in, rather than causing POS to reject the current user's batch.
 
 # 2026-08-14 — Multi-item purchase-order drafts / ร่างใบสั่งซื้อหลายรายการ
 

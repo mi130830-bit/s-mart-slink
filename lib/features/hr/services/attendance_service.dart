@@ -126,7 +126,7 @@ class AttendanceService {
 
   Future<void> fetchTodayLogFromServer(String userId) async {
     try {
-      await syncUnsyncedLogs();
+      await syncUnsyncedLogs(userId: userId);
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final response = await _apiService
           .getRaw('/hr/attendance/today?user_id=$userId&date=$today');
@@ -237,7 +237,7 @@ class AttendanceService {
     });
 
     // Try to sync immediately
-    await syncUnsyncedLogs(throwOnFailure: requireServer);
+    await syncUnsyncedLogs(userId: userId, throwOnFailure: requireServer);
   }
 
   Future<void> checkIn(
@@ -317,12 +317,25 @@ class AttendanceService {
   }
 
   // --- API Sync Logic ---
-  Future<void> syncUnsyncedLogs({bool throwOnFailure = false}) async {
+  /// Returns true only when POS explicitly acknowledges every queued record.
+  /// A transport-level 200 response alone is not enough to mark a local
+  /// attendance action as completed.
+  Future<bool> syncUnsyncedLogs({
+    String? userId,
+    bool throwOnFailure = false,
+  }) async {
+    if (userId == null || userId.isEmpty) {
+      log('AttendanceService: No active user; skipping attendance sync.');
+      return false;
+    }
     final isar = await _isarService.db;
-    final unsyncedLogs =
-        await isar.attendanceLogIsars.filter().isSyncedEqualTo(false).findAll();
+    final unsyncedLogs = await isar.attendanceLogIsars
+        .filter()
+        .isSyncedEqualTo(false)
+        .userIdEqualTo(userId)
+        .findAll();
 
-    if (unsyncedLogs.isEmpty) return;
+    if (unsyncedLogs.isEmpty) return true;
 
     try {
       List<Map<String, dynamic>> payload = unsyncedLogs
@@ -351,27 +364,51 @@ class AttendanceService {
       final response =
           await _apiService.postRaw('/hr/attendance/sync', {'logs': payload});
 
-      if (response['status'] == 'success') {
-        // Mark as synced
+      final expectedSyncIds =
+          unsyncedLogs.map((log) => log.syncId).whereType<String>().toSet();
+      final acknowledgedSyncIds = response['synced_ids'] is List
+          ? (response['synced_ids'] as List)
+              .map((value) => value?.toString())
+              .whereType<String>()
+              .toSet()
+          : <String>{};
+      final syncedCount = response['synced_count'];
+      final hasCompleteAcknowledgement = response['status'] == 'success' &&
+          syncedCount is num &&
+          syncedCount.toInt() == expectedSyncIds.length &&
+          acknowledgedSyncIds.length == expectedSyncIds.length &&
+          acknowledgedSyncIds.containsAll(expectedSyncIds);
+
+      if (hasCompleteAcknowledgement) {
+        // Mark only the records POS explicitly acknowledged. Re-read inside
+        // the transaction so a newer local action is never accidentally
+        // completed by an older network response.
         await isar.writeTxn(() async {
           for (var log in unsyncedLogs) {
-            log.isSynced = true;
-            await isar.attendanceLogIsars.put(log);
+            final current = await isar.attendanceLogIsars.get(log.id);
+            if (current?.isSynced == false &&
+                current?.syncId != null &&
+                acknowledgedSyncIds.contains(current!.syncId)) {
+              current.isSynced = true;
+              await isar.attendanceLogIsars.put(current);
+            }
           }
         });
         log('AttendanceService: Synced ${unsyncedLogs.length} logs to MySQL.');
-      } else if (throwOnFailure) {
-        throw StateError('POS did not confirm attendance sync');
+        return true;
       }
+
+      throw StateError('POS did not fully confirm attendance sync');
     } catch (e) {
       log('AttendanceService: Failed to sync to MySQL: $e');
       if (throwOnFailure) throw AttendanceSyncException(e);
+      return false;
     }
   }
 
   // To be called by a background task periodically (every hour)
-  Future<void> backgroundCleanupAndSync() async {
-    await syncUnsyncedLogs();
+  Future<void> backgroundCleanupAndSync(String userId) async {
+    await syncUnsyncedLogs(userId: userId);
 
     // Optional: cleanup old logs from Isar (e.g. older than 30 days) to save space
     final isar = await _isarService.db;

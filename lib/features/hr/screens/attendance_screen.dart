@@ -218,14 +218,40 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     setState(() => _isLoading = true);
     try {
-      await _service.checkIn(logData);
+      // Green success is reserved for an acknowledgement from POS. The local
+      // durable queue remains visible if the mobile network is unavailable.
+      await _service.checkIn(logData, requireServer: true);
       await _loadTodayLog();
     } catch (e) {
       if (mounted) {
         setState(() => _isLoading = false);
-        SnackbarUtils.showLeft(context, 'บันทึกข้อมูลไม่สำเร็จ: $e',
-            isError: true);
+        SnackbarUtils.showLeft(
+          context,
+          'บันทึกไว้ในเครื่องแล้ว แต่ยังส่งไม่ถึง POS — กดส่งอีกครั้งได้',
+        );
       }
+    }
+  }
+
+  Future<void> _retryPendingSync() async {
+    final user =
+        Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
+    if (user == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final synced = await _service.syncUnsyncedLogs(userId: user.id);
+      if (!mounted) return;
+      if (synced) {
+        await _pollServer();
+      } else {
+        SnackbarUtils.showLeft(
+          context,
+          'ยังส่งไม่ถึง POS — ระบบจะลองส่งให้อัตโนมัติ',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -354,14 +380,27 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               fontSize: 48, fontWeight: FontWeight.bold)),
                       if (_todayLog != null && !_todayLog!.isSynced) ...[
                         const SizedBox(height: 16),
-                        const Card(
-                          color: Color(0xFFFFF3CD),
+                        // ignore: prefer_const_constructors
+                        Card(
+                          color: const Color(0xFFFFF3CD),
+                          // ignore: prefer_const_constructors
                           child: Padding(
-                            padding: EdgeInsets.symmetric(
+                            padding: const EdgeInsets.symmetric(
                                 horizontal: 18, vertical: 12),
-                            child: Text(
-                              'บันทึกในเครื่องแล้ว กำลังรอซิงก์กับ POS',
-                              style: TextStyle(color: Color(0xFF664D03)),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Text(
+                                  'ยังส่งไม่ถึง POS — ระบบกำลังส่งให้อัตโนมัติ',
+                                  style: TextStyle(color: Color(0xFF664D03)),
+                                ),
+                                const SizedBox(height: 8),
+                                OutlinedButton.icon(
+                                  onPressed: _retryPendingSync,
+                                  icon: const Icon(Icons.sync),
+                                  label: const Text('ส่งอีกครั้ง'),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -380,6 +419,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 horizontal: 40, vertical: 20),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30)),
+                          ),
+                        )
+                      else if (!_todayLog!.isSynced)
+                        const Text(
+                          'รอ POS ยืนยันการลงเวลา',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Color(0xFF664D03),
+                            fontWeight: FontWeight.bold,
                           ),
                         )
                       else if (_todayLog!.checkOutTime == null)

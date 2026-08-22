@@ -728,15 +728,16 @@ class JobProvider with ChangeNotifier {
       try {
         final jobCustomerName = jobToUpdate?.customer.name ?? 'ไม่ระบุชื่อ';
         String teamNames = '';
-        if (jobToUpdate != null && jobToUpdate.deliveryTeam.isNotEmpty) {
-          final people = jobToUpdate.deliveryTeam
+        final effectiveTeam = deliveryTeam ?? jobToUpdate?.deliveryTeam ?? [];
+        if (effectiveTeam.isNotEmpty) {
+          final people = effectiveTeam
               .where((e) => e.type != 'vehicle')
               .map((e) => e.name)
               .toList();
           if (people.isNotEmpty) teamNames = ' (${people.join(', ')})';
         }
 
-        final vehicleItemDep = jobToUpdate?.deliveryTeam
+        final vehicleItemDep = effectiveTeam
             .where((e) => e.type == 'car' || e.type == 'vehicle')
             .firstOrNull;
         final String vehicleNameDep = vehicleItemDep != null
