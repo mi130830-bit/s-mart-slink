@@ -25,9 +25,12 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // สั่งเช็คเวอร์ชันทันทีที่หน้านี้ถูกโหลด
+    // สั่งเช็คเวอร์ชันแบบแยกตามบทบาททันทีที่หน้านี้ถูกโหลด
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      VersionCheckService.checkVersion(context);
+      if (mounted) {
+        final user = Provider.of<AuthenticationProvider>(context, listen: false).currentUser;
+        VersionCheckService.checkVersion(context, role: user?.role);
+      }
     });
   }
 

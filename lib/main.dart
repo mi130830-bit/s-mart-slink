@@ -1,10 +1,6 @@
 // ไฟล์: lib/main.dart (ฉบับแก้ไขและสมบูรณ์)
 
-//import 'dart:developer';
-import 'dart:io';
-import 'package:in_app_update/in_app_update.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 
 import 'core/config/app_constants.dart';
@@ -86,7 +82,6 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _appStateManager = AppStateManager();
-    _checkForUpdate();
   }
 
   @override
@@ -104,22 +99,6 @@ class _MyAppState extends State<MyApp> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _appStateManager.manageDataListeners(context);
       });
-    }
-  }
-
-  Future<void> _checkForUpdate() async {
-    if (kDebugMode) return;
-
-    if (Platform.isAndroid) {
-      try {
-        final info = await InAppUpdate.checkForUpdate();
-        if (info.updateAvailability == UpdateAvailability.updateAvailable &&
-            info.immediateUpdateAllowed) {
-          await InAppUpdate.performImmediateUpdate();
-        }
-      } catch (e) {
-        debugPrint('InAppUpdate Error: $e');
-      }
     }
   }
 

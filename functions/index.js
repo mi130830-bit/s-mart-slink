@@ -401,9 +401,8 @@ exports.onJobStatusChanged = onDocumentUpdated("jobs/{jobId}", async (event) => 
 
 const axios = require('axios');
 
-// ✅ Line Channel Access Token (จาก Line Developers Console)
-// TODO: ย้ายไปเก็บใน Firebase Config ด้วย: firebase functions:config:set line.token="..."
-const LINE_ACCESS_TOKEN = "MQ6XpVaw49U6pmJGbYMfy32tv0DVGQuVvhTQOUilbwgTBGroF19SUcsT9YVQe+EzJFUdgrHJMZCq0wznkxCosr3B6QUHIvKuPSIO/BFVzs6PpSJKcpuKrrT/GwLCJ6e+00EiwvpRUBoApSTc1uT+rwdB04t89/1O/w1cDnyilFU=";
+// Required at runtime; direct LINE delivery fails closed when it is absent.
+const LINE_CHANNEL_TOKEN = (process.env.LINE_CHANNEL_TOKEN || '').trim();
 
 // =========================================================
 // Helper: ส่งข้อความ Line OA โดยตรง (ไม่ผ่าน POS Backend)
@@ -411,6 +410,10 @@ const LINE_ACCESS_TOKEN = "MQ6XpVaw49U6pmJGbYMfy32tv0DVGQuVvhTQOUilbwgTBGroF19SU
 async function sendLineDirectMessage(lineUserId, message) {
     if (!lineUserId || !message) {
         console.log('⚠️ sendLineDirectMessage: Missing lineUserId or message');
+        return false;
+    }
+    if (!LINE_CHANNEL_TOKEN) {
+        console.error('❌ LINE_CHANNEL_TOKEN is not configured; LINE message was not sent');
         return false;
     }
     try {
@@ -421,7 +424,7 @@ async function sendLineDirectMessage(lineUserId, message) {
         }, {
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${LINE_ACCESS_TOKEN}`
+                'Authorization': `Bearer ${LINE_CHANNEL_TOKEN}`
             }
         });
         console.log(`✅ Line message sent successfully!`);
@@ -508,12 +511,16 @@ exports.onJobStatusChanged_LineOA = onDocumentUpdated("jobs/{jobId}", async (eve
             // B. Notify Backend (For MySQL Logging)
             const localOrderId = after.localOrderId || '';
             if (localOrderId) {
-                const url = `${apiUrl}/api/v1/line/notify-stage2/${localOrderId}`;
+                const url = `${apiUrl}/api/v1/line-internal/notify-stage2/${localOrderId}`;
+                const internalSecret = process.env.INTERNAL_API_SECRET || '';
                 const vehicle = (after.delivery_team || []).find((item) =>
                     item && (item.type === 'vehicle' || item.type === 'car'));
                 const vehicleKey = vehicle?.name || vehicle?.licensePlate || '';
                 console.log(`📤 Syncing Stage 2 to Backend: ${url}`);
-                await axios.post(url, { vehicle: vehicleKey }, { timeout: 5000 })
+                await axios.post(url, { vehicle: vehicleKey }, {
+                    timeout: 5000,
+                    headers: { 'X-Internal-Secret': internalSecret }
+                })
                     .catch(e => console.error('Backend Stage 2 Sync Error:', e.message));
             }
         } catch (e) {
@@ -538,13 +545,17 @@ exports.onJobStatusChanged_LineOA = onDocumentUpdated("jobs/{jobId}", async (eve
             // B. Notify Backend (For MySQL Logging)
             const localOrderId = after.localOrderId || '';
             if (localOrderId) {
-                const url = `${apiUrl}/api/v1/line/notify-stage3/${localOrderId}`;
+                const url = `${apiUrl}/api/v1/line-internal/notify-stage3/${localOrderId}`;
+                const internalSecret = process.env.INTERNAL_API_SECRET || '';
                 console.log(`📤 Syncing Stage 3 to Backend: ${url}`);
                 const payload = {
                     imageUrl: after.proof_image_url || null,
                     locationUrl: after.location_link || null
                 };
-                await axios.post(url, payload, { timeout: 5000 }).catch(e => console.error('Backend Stage 3 Sync Error:', e.message));
+                await axios.post(url, payload, {
+                    timeout: 5000,
+                    headers: { 'X-Internal-Secret': internalSecret }
+                }).catch(e => console.error('Backend Stage 3 Sync Error:', e.message));
             }
         } catch (e) {
             console.error('Stage 3 Error:', e);

@@ -7,7 +7,7 @@ extension PosApiLineExtension on PosApiService {
     try {
       await _sendRequest(
         method: 'POST',
-        path: '/line/push-message',
+        path: '/line-internal/push-message',
         body: {
           'lineUserId': lineUserId,
           'message': message,

@@ -1,9 +1,16 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:s_link/utils/snackbar_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:s_link/features/alerts/services/alert_log_service.dart';
 import 'package:s_link/features/pos/models/pos_product.dart';
 import 'package:s_link/features/pos/repositories/pos_repository.dart';
 import 'package:s_link/features/pos/services/pos_api_service.dart';
+import 'package:provider/provider.dart';
+import 'package:s_link/features/auth/providers/auth_provider.dart';
 import 'scanner_screen.dart';
 
 class StockCheckScreen extends StatefulWidget {
@@ -22,8 +29,11 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
   final Map<int, double> _countedStock = {};
   // Ordered list of products for display
   final List<PosProduct> _scannedProducts = [];
+  // Live search suggestions
+  final List<PosProduct> _suggestions = [];
 
   bool _isLoading = false;
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -35,30 +45,91 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _focusNode.dispose();
     super.dispose();
   }
 
-  Future<void> _handleScan(String code) async {
-    if (code.trim().isEmpty) return;
-    _searchController.clear(); // Clear immediately for next scan
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    final text = query.trim();
+    if (text.isEmpty) {
+      setState(_suggestions.clear);
+      return;
+    }
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () async {
+      try {
+        final results = await _apiService.getProducts(search: text, limit: 15);
+        if (!mounted || _searchController.text.trim() != text) return;
+        setState(() {
+          _suggestions
+            ..clear()
+            ..addAll(results);
+        });
+      } catch (e) {
+        debugPrint('⚠️ StockCheck search suggestions error: $e');
+      }
+    });
+  }
 
+  void _selectSuggestion(PosProduct product) {
+    _searchDebounce?.cancel();
+    _searchController.clear();
+    setState(_suggestions.clear);
+    _addProductToMap(product);
+    _focusNode.requestFocus();
+  }
+
+  Future<void> _handleScan(String code) async {
+    final text = code.trim();
+    if (text.isEmpty) return;
+
+    // 1. ถ้ามี suggestions อยู่แล้ว ให้ตรวจสอบก่อน
+    if (_suggestions.isNotEmpty) {
+      final exact = _suggestions.where(
+          (p) => p.barcode == text || p.barcode.endsWith(text));
+      if (exact.isNotEmpty) {
+        _selectSuggestion(exact.first);
+        return;
+      }
+      if (_suggestions.length == 1) {
+        _selectSuggestion(_suggestions.first);
+        return;
+      }
+      SnackbarUtils.showLeft(context, 'พบสินค้า ${_suggestions.length} รายการ กรุณาแตะเลือกรายการที่ต้องการ');
+      return;
+    }
+
+    // 2. ดึงข้อมูลจาก API
     setState(() => _isLoading = true);
 
     try {
-      final results = await _apiService.getProducts(search: code, limit: 10);
+      final results = await _apiService.getProducts(search: text, limit: 15);
 
       if (results.isNotEmpty) {
-        // Assume exact match or first result
-        final product = results.firstWhere(
-            (p) => p.barcode == code || p.barcode.endsWith(code),
-            orElse: () => results.first);
+        final exact = results.where(
+            (p) => p.barcode == text || p.barcode.endsWith(text));
 
-        _addProductToMap(product);
+        if (exact.isNotEmpty) {
+          _searchController.clear();
+          _addProductToMap(exact.first);
+        } else if (results.length == 1) {
+          _searchController.clear();
+          _addProductToMap(results.first);
+        } else {
+          setState(() {
+            _suggestions
+              ..clear()
+              ..addAll(results);
+          });
+          if (mounted) {
+            SnackbarUtils.showLeft(context, 'พบสินค้า ${results.length} รายการ กรุณาแตะเลือกรายการที่ต้องการ');
+          }
+        }
       } else {
         if (mounted) {
-          SnackbarUtils.showLeft(context, 'ไม่พบสินค้า: $code', isError: true);
+          SnackbarUtils.showLeft(context, 'ไม่พบสินค้า: $text', isError: true);
         }
       }
     } catch (e) {
@@ -70,6 +141,47 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
         setState(() => _isLoading = false);
         _focusNode.requestFocus();
       }
+    }
+  }
+
+  Future<void> _showEditCountDialog(PosProduct product, double currentCount) async {
+    final countController = TextEditingController(text: currentCount.toStringAsFixed(0));
+    final newCount = await showDialog<double>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('ระบุจำนวนนับ: ${product.name}'),
+        content: TextField(
+          controller: countController,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'จำนวนนับจริง',
+            border: OutlineInputBorder(),
+            suffixText: 'ชิ้น',
+          ),
+          onSubmitted: (val) {
+            final parsed = double.tryParse(val.trim());
+            Navigator.pop(ctx, parsed);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('ยกเลิก'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final parsed = double.tryParse(countController.text.trim());
+              Navigator.pop(ctx, parsed);
+            },
+            child: const Text('ตกลง'),
+          ),
+        ],
+      ),
+    );
+
+    if (newCount != null) {
+      _updateCount(product.id, newCount);
     }
   }
 
@@ -90,7 +202,7 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
 
   void _updateCount(int productId, double newCount) {
     setState(() {
-      _countedStock[productId] = newCount;
+      _countedStock[productId] = newCount < 0 ? 0 : newCount;
     });
   }
 
@@ -99,6 +211,168 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
       _countedStock.remove(productId);
       _scannedProducts.removeWhere((p) => p.id == productId);
     });
+  }
+
+  Widget _buildImageStatusBadge(PosProduct p, int index) {
+    final hasImage = p.imageUrl != null && p.imageUrl!.trim().isNotEmpty;
+    return InkWell(
+      onTap: () => _pickAndUploadProductImage(p, index),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: hasImage ? Colors.green.shade50 : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: hasImage ? Colors.green.shade300 : Colors.grey.shade300,
+            width: 0.8,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              hasImage ? Icons.check_circle : Icons.camera_alt_outlined,
+              size: 13,
+              color: hasImage ? Colors.green.shade700 : Colors.grey.shade700,
+            ),
+            const SizedBox(width: 3),
+            Text(
+              hasImage ? 'มีรูปแล้ว' : 'ถ่ายรูป',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: hasImage ? Colors.green.shade700 : Colors.grey.shade700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickAndUploadProductImage(PosProduct p, int index) async {
+    if (p.id <= 0) {
+      SnackbarUtils.showLeft(context, '⚠️ ไม่สามารถอัปโหลดรูปสินค้าชั่วคราวได้');
+      return;
+    }
+
+    final isDesktop = !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+    File? imageFile;
+
+    if (isDesktop) {
+      // บน Windows Desktop ให้เปิดหน้าต่างเลือกไฟล์รูปภาพโดยตรง
+      try {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.image,
+          allowMultiple: false,
+        );
+        if (result != null && result.files.single.path != null) {
+          imageFile = File(result.files.single.path!);
+        }
+      } catch (e) {
+        debugPrint('⚠️ FilePicker error on desktop: $e');
+      }
+    } else {
+      // บน Mobile (Android / iOS) ให้แสดงตัวเลือก ถ่ายรูปด้วยกล้อง หรือ เลือกจากอัลบั้ม
+      final ImageSource? source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  'ถ่ายรูป/อัปโหลดภาพ: ${p.name}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt, color: Colors.blue),
+                title: const Text('ถ่ายรูปด้วยกล้อง'),
+                onTap: () => Navigator.pop(ctx, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library, color: Colors.green),
+                title: const Text('เลือกจากแกลเลอรี'),
+                onTap: () => Navigator.pop(ctx, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      if (source == null) return;
+
+      try {
+        final picker = ImagePicker();
+        final picked = await picker.pickImage(
+          source: source,
+          maxWidth: 600,
+          maxHeight: 600,
+          imageQuality: 70,
+        );
+        if (picked != null) {
+          imageFile = File(picked.path);
+        }
+      } catch (e) {
+        debugPrint('⚠️ ImagePicker error, trying FilePicker fallback: $e');
+        try {
+          final result = await FilePicker.platform.pickFiles(
+            type: FileType.image,
+            allowMultiple: false,
+          );
+          if (result != null && result.files.single.path != null) {
+            imageFile = File(result.files.single.path!);
+          }
+        } catch (fpe) {
+          debugPrint('⚠️ FilePicker fallback failed: $fpe');
+        }
+      }
+    }
+
+    if (imageFile == null) return;
+
+    try {
+      if (!mounted) return;
+      SnackbarUtils.showLeft(context, '⏳ กำลังอัปโหลดรูปภาพ...');
+
+      final uploadedUrl = await _apiService.uploadProductImage(
+        productId: p.id,
+        imageFile: imageFile,
+      );
+
+      if (!mounted) return;
+
+      if (uploadedUrl != null && uploadedUrl.isNotEmpty) {
+        SnackbarUtils.showLeft(context, '✅ อัปโหลดรูป "${p.name}" เรียบร้อย');
+        setState(() {
+          final updatedProduct = PosProduct(
+            id: p.id,
+            barcode: p.barcode,
+            name: p.name,
+            retailPrice: p.retailPrice,
+            stockQuantity: p.stockQuantity,
+            imageUrl: uploadedUrl,
+            categoryId: p.categoryId,
+          );
+          _scannedProducts[index] = updatedProduct;
+        });
+      } else {
+        SnackbarUtils.showLeft(context, '❌ อัปโหลดรูปภาพไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+      }
+    } catch (e) {
+      debugPrint('⚠️ Error uploading product image: $e');
+      if (mounted) {
+        SnackbarUtils.showLeft(context, '❌ เกิดข้อผิดพลาด: $e');
+      }
+    }
   }
 
   Future<void> _saveAdjustments() async {
@@ -165,8 +439,26 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
         return;
       }
 
-      // ✅ Update ผ่าน MySQL ตรงๆ
-      final success = await PosRepository().updateStock(stockUpdates);
+      // ✅ ดึงชื่อพนักงานผู้ตรวจนับจาก AuthenticationProvider
+      String currentUserName = 'App User';
+      try {
+        final authProvider =
+            Provider.of<AuthenticationProvider>(context, listen: false);
+        final user = authProvider.currentUser;
+        if (user != null) {
+          currentUserName =
+              user.name.trim().isNotEmpty ? user.name.trim() : (user.email.isNotEmpty ? user.email : 'App User');
+        }
+      } catch (e) {
+        debugPrint('⚠️ Cannot get auth user in StockCheck: $e');
+      }
+
+      // ✅ Update ผ่าน API (บันทึก MySQL + Ledger)
+      final success = await PosRepository().updateStock(
+        stockUpdates,
+        user: currentUserName,
+        note: 'S-Link Stock Check (by $currentUserName)',
+      );
 
       if (!mounted) return;
       Navigator.pop(context); // Close loading dialog
@@ -383,31 +675,155 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
       ),
       body: Column(
         children: [
-          // Search/Scan Bar
+          // Search/Scan Bar with Dropdown Suggestions
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: TextField(
-              controller: _searchController,
-              focusNode: _focusNode,
-              decoration: InputDecoration(
-                labelText: 'สแกนสินค้านับสต๊อก',
-                prefixIcon: const Icon(Icons.qr_code),
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.qr_code_scanner),
-                  onPressed: () async {
-                    final code = await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ScannerScreen()),
-                    );
-                    if (code != null && code is String) {
-                      _handleScan(code);
-                    }
-                  },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _searchController,
+                  focusNode: _focusNode,
+                  onChanged: _onSearchChanged,
+                  onSubmitted: _handleScan,
+                  textInputAction: TextInputAction.search,
+                  decoration: InputDecoration(
+                    labelText: 'พิมพ์ชื่อสินค้า หรือสแกนบาร์โค้ด',
+                    hintText: 'เช่น ปูน, สายไฟ, ท่อ, หรือรหัสบาร์โค้ด',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_searchController.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.clear, color: Colors.grey),
+                            tooltip: 'ล้างคำค้นหา',
+                            onPressed: () {
+                              _searchController.clear();
+                              _searchDebounce?.cancel();
+                              setState(_suggestions.clear);
+                              _focusNode.requestFocus();
+                            },
+                          ),
+                        IconButton(
+                          icon: const Icon(Icons.qr_code_scanner),
+                          tooltip: 'เปิดกล้องสแกน',
+                          onPressed: () async {
+                            final code = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const ScannerScreen()),
+                            );
+                            if (code != null && code is String) {
+                              _handleScan(code);
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    border: const OutlineInputBorder(),
+                  ),
                 ),
-                border: const OutlineInputBorder(),
-              ),
-              onSubmitted: _handleScan,
-              textInputAction: TextInputAction.next,
+                // Dropdown Suggestions List
+                if (_suggestions.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 4),
+                    constraints: const BoxConstraints(maxHeight: 250),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      border: Border.all(color: Colors.orange.shade300, width: 1.5),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          color: Colors.orange.shade50,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'ผลการค้นหา (${_suggestions.length} รายการ - แตะเพื่อเลือก):',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.orange.shade900,
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => setState(_suggestions.clear),
+                                child: const Icon(Icons.close, size: 18, color: Colors.grey),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Flexible(
+                          child: ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: _suggestions.length,
+                            separatorBuilder: (_, __) => const Divider(height: 1),
+                            itemBuilder: (ctx, index) {
+                              final p = _suggestions[index];
+                              final hasImg = p.imageUrl != null && p.imageUrl!.trim().isNotEmpty;
+                              return ListTile(
+                                dense: true,
+                                leading: const Icon(Icons.inventory_2, color: Colors.orange),
+                                title: Text(
+                                  p.name,
+                                  style: const TextStyle(fontWeight: FontWeight.bold),
+                                ),
+                                subtitle: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        'บาร์โค้ด: ${p.barcode.isEmpty ? "-" : p.barcode} • สต๊อก: ${p.stockQuantity.toStringAsFixed(0)}',
+                                        style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (hasImg)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.shade50,
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(color: Colors.green.shade300, width: 0.5),
+                                        ),
+                                        child: Text(
+                                          '📷 มีรูปแล้ว',
+                                          style: TextStyle(color: Colors.green.shade800, fontSize: 10, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                trailing: Text(
+                                  '฿${p.retailPrice.toStringAsFixed(0)}',
+                                  style: const TextStyle(
+                                    color: Colors.green,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                onTap: () => _selectSuggestion(p),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
             ),
           ),
           if (_isLoading) const LinearProgressIndicator(),
@@ -447,7 +863,7 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
                         Icon(Icons.inventory,
                             size: 80, color: Colors.grey.shade300),
                         const SizedBox(height: 10),
-                        Text('เริ่มสแกนเพื่อเพิ่มรายการสินค้า',
+                        Text('พิมพ์ชื่อหรือสแกนเพื่อเพิ่มรายการสินค้า',
                             style: TextStyle(color: Colors.grey.shade600)),
                       ],
                     ),
@@ -455,9 +871,6 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
                 : ListView.separated(
                     itemCount: _scannedProducts.length,
                     separatorBuilder: (ctx, i) => const Divider(height: 1),
-                    // Optimization: Fixed height estimate (Calculated ~80-100 dependent on content)
-                    // Since height varies with diff text, we use a prototype or cache extent.
-                    // For simplicity and safety with variable content, we keep it standard but add cacheExtent.
                     cacheExtent: 500,
                     itemBuilder: (ctx, i) {
                       final p = _scannedProducts[i];
@@ -471,19 +884,30 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
                             horizontal: 8, vertical: 8),
                         child: Row(
                           children: [
-                            // Product Name
+                            // Product Name & Image Badge
                             Expanded(
-                              flex: 3, // Reduced from 4
+                              flex: 4,
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(p.name,
                                       style: const TextStyle(
                                           fontWeight: FontWeight.bold)),
-                                  Text(p.barcode,
-                                      style: const TextStyle(
-                                          fontSize: 12, color: Colors.grey)),
-                                  if (diff != 0)
+                                  const SizedBox(height: 3),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 3,
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    children: [
+                                      if (p.barcode.isNotEmpty)
+                                        Text(p.barcode,
+                                            style: const TextStyle(
+                                                fontSize: 12, color: Colors.grey)),
+                                      _buildImageStatusBadge(p, i),
+                                    ],
+                                  ),
+                                  if (diff != 0) ...[
+                                    const SizedBox(height: 2),
                                     Text(
                                       'Diff: ${diff > 0 ? "+${diff.toStringAsFixed(0)}" : diff.toStringAsFixed(0)}',
                                       style: TextStyle(
@@ -493,12 +917,13 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
                                           fontWeight: FontWeight.bold,
                                           fontSize: 12),
                                     ),
+                                  ],
                                 ],
                               ),
                             ),
                             // System Stock
                             Expanded(
-                              flex: 1, // Reduced from 2
+                              flex: 1,
                               child: Text(
                                 sysStock.toStringAsFixed(0),
                                 textAlign: TextAlign.center,
@@ -507,7 +932,7 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
                             ),
                             // Counted Input
                             Expanded(
-                              flex: 3, // Kept at 3
+                              flex: 3,
                               child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
@@ -521,17 +946,28 @@ class _StockCheckScreenState extends State<StockCheckScreen> {
                                     padding: EdgeInsets.zero,
                                     iconSize: 22,
                                   ),
-                                  Container(
-                                    constraints:
-                                        const BoxConstraints(minWidth: 30),
-                                    alignment: Alignment.center,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 2),
-                                    child: Text(
-                                      count.toStringAsFixed(0),
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 18),
+                                  InkWell(
+                                    onTap: () => _showEditCountDialog(p, count),
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Container(
+                                      constraints:
+                                          const BoxConstraints(minWidth: 36),
+                                      alignment: Alignment.center,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                            color: Colors.grey.shade300),
+                                        borderRadius:
+                                            BorderRadius.circular(4),
+                                        color: Colors.grey.shade50,
+                                      ),
+                                      child: Text(
+                                        count.toStringAsFixed(0),
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 18),
+                                      ),
                                     ),
                                   ),
                                   IconButton(

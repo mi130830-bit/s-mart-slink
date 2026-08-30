@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:s_link/features/pos/models/pos_product.dart';
 import 'package:s_link/features/pos/repositories/pos_repository.dart';
 import 'package:s_link/features/pos/screens/scanner_screen.dart';
@@ -22,6 +24,7 @@ class _StockReceiveScreenState extends State<StockReceiveScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
   final _repo = PosRepository();
+  final _picker = ImagePicker();
   final _lines = <_DraftLine>[];
   final _suggestions = <PosProduct>[];
   final _supplierSuggestions = <Map<String, dynamic>>[];
@@ -189,6 +192,14 @@ class _StockReceiveScreenState extends State<StockReceiveScreen> {
     setState(() => _isLoading = true);
     _submissionId ??= const Uuid().v4();
     try {
+      for (final line in _lines) {
+        if (line.productId != null && line.imagePath != null) {
+          await _repo.uploadProductImage(
+            line.productId!,
+            File(line.imagePath!),
+          );
+        }
+      }
       final result = await _repo.createPurchaseOrderDraft(
         receiptId: _submissionId!,
         supplierId: _supplierId!,
@@ -215,6 +226,15 @@ class _StockReceiveScreenState extends State<StockReceiveScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _pickImage(_DraftLine line) async {
+    final image = await _picker.pickImage(
+      source: ImageSource.camera,
+      imageQuality: 80,
+      maxWidth: 1600,
+    );
+    if (image != null && mounted) setState(() => line.imagePath = image.path);
   }
 
   @override
@@ -361,6 +381,19 @@ class _StockReceiveScreenState extends State<StockReceiveScreen> {
                       }),
                   icon: const Icon(Icons.delete_outline, color: Colors.red))
             ]),
+            if (line.productId != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => _pickImage(line),
+                  icon: Icon(line.imagePath == null
+                      ? Icons.add_a_photo_outlined
+                      : Icons.photo_camera_back_outlined),
+                  label: Text(line.imagePath == null
+                      ? 'ถ่ายรูปสินค้า (ไม่บังคับ)'
+                      : 'เลือกรูปใหม่'),
+                ),
+              ),
             const SizedBox(height: 10),
             Row(children: [
               Expanded(
@@ -412,6 +445,7 @@ class _DraftLine {
         cost = TextEditingController(),
         total = TextEditingController();
   final int? productId;
+  String? imagePath;
   final TextEditingController name, qty, cost, total;
   double get quantity => double.tryParse(qty.text) ?? 0;
   double get unitCost => double.tryParse(cost.text) ?? 0;

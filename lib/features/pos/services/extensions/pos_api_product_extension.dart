@@ -1,6 +1,28 @@
 part of '../pos_api_service.dart';
 
 extension PosApiProductExtension on PosApiService {
+  Future<String?> uploadProductImage({
+    required int productId,
+    required File imageFile,
+  }) async {
+    try {
+      final bytes = await imageFile.readAsBytes();
+      final response = await _sendRequest(
+        method: 'POST',
+        path: '/api/v1/products/$productId/image',
+        body: {'image': base64Encode(bytes)},
+        timeout: const Duration(seconds: 30),
+      );
+      if (response is Map && response['url'] != null) {
+        final baseUrl = await getBaseUrl();
+        return '$baseUrl${response['url']}';
+      }
+    } catch (e) {
+      debugPrint('❌ Upload product image error: $e');
+    }
+    return null;
+  }
+
   // 2. Fetch Products
   Future<List<PosProduct>> getProducts({
     int page = 1,

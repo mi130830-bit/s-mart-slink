@@ -1,5 +1,54 @@
 # S-Link Fix History
 
+## [2026-08-30] Price Check Real-time Search by Name, Barcode & Product Selection / อัปเกรดระบบเช็คราคาสินค้าหน้าร้าน (ค้นหาชื่อแบบ Real-time, สแกนบาร์โค้ด และเลือกจากรายการ)
+
+**ไทย:** ปรับปรุงหน้าจอเช็คราคาสินค้า (`lib/features/pos/screens/price_check_screen.dart`):
+1. **ระบบค้นหาตามชื่อสินค้าแบบ Real-time (Live Debounce Search):** เพิ่มระบบค้นหาอัตโนมัติขณะพิมพ์ (Debounce 300ms) พนักงานสามารถพิมพ์ค้นหาด้วยชื่อสินค้า (เช่น ปูนเสือ, ทราย, ตะปู) โดยไม่ต้องกด Enter
+2. **การแสดงผลรายการสินค้าที่ค้นพบ (Multi-Product Selection List):** หากคำค้นหาตรงกับสินค้าหลายรายการ ระบบจะแสดงรายการสินค้าพร้อมชื่อ, บาร์โค้ด, จำนวนสต็อกคงเหลือ และราคาขาย ให้แตะเลือกดูป้ายราคาแบบ Big Card ได้ทันที
+3. **ปุ่มควบคุมครบครันและ Lazy-Friendly UX:** เพิ่มปุ่มค้นหา, ปุ่มสแกนบาร์โค้ดผ่านกล้อง, ปุ่มล้างข้อความด่วน, และปุ่มกลับหน้ารายการสินค้า ใช้งานสะดวก รวดเร็ว ลดขั้นตอนการทำงานของพนักงานหน้าร้าน
+4. **ระบบย้อนกลับอัจฉริยะ (Smart Back Navigation to Search Results):** รองรับการกดย้อนกลับ (ทั้งปุ่มบนหน้าจอ, ปุ่ม Back ของ Android หรือแถบ AppBar) จากหน้ารายละเอียดราคา ให้กลับมายัง **หน้ารายการผลลัพธ์การค้นหาเดิมทันที** (คำค้นหาและรายการสินค้าไม่หาย) ทำให้พนักงานสามารถแตะดูราคาสินค้าชิ้นถัดไปที่มีชื่อคล้ายกัน (เช่น วงบ่อ 30 ➔ วงบ่อ 40) ได้ต่อเนื่องทันทีโดยไม่ต้องพิมพ์ค้นหาซ้ำ
+
+**English:** Enhanced Price Check Screen with Real-Time Search and Multi-Product Selection (`lib/features/pos/screens/price_check_screen.dart`):
+1. **Live Debounce Search:** Integrated real-time debounced searching (300ms) allowing staff to search items by name without requiring manual enter keystrokes.
+2. **Multi-Product Selection Cards:** When a query matches multiple items, presents an interactive list with stock status, barcodes, and prices for instant detailed inspection.
+3. **Lazy-Friendly Controls:** Added dedicated search, clear, barcode scanner, and navigation buttons for high-efficiency mobile workflows.
+4. **Smart Back Navigation:** Added `PopScope` and leading back navigation so pressing Back in the price detail view preserves the search term and returns directly to the search results list, allowing continuous multi-item price checks (e.g. checking adjacent sizes) without re-searching.
+
+---
+
+## [2026-08-26] Stock Check User Attribution & Audit Trail Integration / บันทึกชื่อผู้ตรวจนับสต็อกจริงเข้าสู่ระบบประวัติ POS
+
+**ไทย:** ปรับปรุงระบบบันทึกการตรวจนับและรับเข้าสต็อก (`pos_repository.dart`, `stock_check_screen.dart`):
+1. **ส่งชื่อพนักงานผู้ตรวจนับจริง (Logged-in User Attribution):** ปรับปรุง `StockCheckScreen._saveAdjustments` ให้อ่านชื่อพนักงานจาก `AuthenticationProvider` (`user.name` หรือ `user.email`) แล้วส่งผ่านพารามิเตอร์ `user` และ `note` ไปยัง `PosRepository.updateStock`
+2. **ประวัติและหมายเหตุที่ชัดเจน (Clear Audit Note):** ทำให้ประวัติในตาราง `stockledger` บน POS Desktop แสดงหมายเหตุเป็น `S-Link Stock Check (by [ชื่อพนักงาน])` ช่วยให้ตรวจสอบย้อนหลังได้ชัดเจนว่าใครเป็นผู้ตรวจนับสินค้าชิ้นนั้น
+
+**English:** Integrated User Attribution & Audit Trail for S-Link Stock Check (`pos_repository.dart`, `stock_check_screen.dart`):
+1. **Authenticated User Attribution:** Updated `StockCheckScreen._saveAdjustments` to extract the authenticated user's name from `AuthenticationProvider` and pass it down through `PosRepository.updateStock`.
+2. **Audit Logging & Note Context:** Recorded stock ledger adjustments with explicit author notes (`S-Link Stock Check (by [Staff Name])`), ensuring full transparency in POS Desktop audit logs.
+
+---
+
+## [2026-08-25] Role-Aware In-App Update System, Stock Check Photo Capture & Product Search Dropdown
+
+**ไทย:** พัฒนาระบบอัปเดตแอปแยกตามบทบาท และปรับปรุงประสิทธิภาพหน้าจอเช็คสต็อก (`VersionCheckService`, `StockCheckScreen`, `main.dart`, `pubspec.yaml`):
+1. **ระบบอัปเดตแอปแยกตามบทบาท (Role-Aware In-App Update):**
+   - ยกเลิกการบล็อกหน้าจอตอนเปิดแอปใน `main.dart` เพื่อไม่ให้กระทบคนขับรถหรือหน้าร้าน
+   - คนขับรถและหน้าร้าน (`driver`, `requester`, `gas_station`, `hr`): เกณฑ์ขั้นต่ำ build **119** (5.0.1) ไม่ถูกบังคับอัปเดต
+   - แอดมิน (`admin`): เกณฑ์ขั้นต่ำ build **120** (5.0.2) เพื่อรับฟีเจอร์ล่าสุด
+   - กำหนดเลขเวอร์ชันปัจจุบันเป็น `5.0.2+120`
+2. **ระบบถ่ายรูปสินค้าขณะเช็คสต็อก (In-situ Photo Capture & Cross-Platform):**
+   - เพิ่มปุ่ม `[📷 ถ่ายรูป]` บนรายการสินค้า ถ่ายรูปจากกล้องมือถือ/เลือกจากอัลบั้ม ย่อขนาดกะทัดรัด (600x600 px, คุณภาพ 70%) แล้วอัปโหลดเข้าเซิร์ฟเวอร์ POS (`POST /api/v1/products/:id/image`)
+   - รองรับทั้งมือถือ (`ImagePicker`) และ Windows Desktop (`FilePicker`) ป้องกัน Error `cameraDelegate`
+   - แสดงป้าย `[✅ มีรูปแล้ว]` แบบประหยัดทรัพยากร ไม่เปลือง Data
+3. **ระบบค้นหาสินค้าแบบ Live Debounce & แก้ไขยอดนับด่วน:**
+   - Dropdown ค้นหาสินค้าแบบ Live Debounce (250ms) แสดงชื่อ, บาร์โค้ด, สต็อก, ราคา ป้องกันการเลือกผิดตัว
+   - เพิ่มปุ่ม Clear คำค้นหา และสามารถแตะตัวเลขจำนวนนับเพื่อพิมพ์แก้ไขได้โดยตรงผ่าน Dialog
+
+**English:** Role-Aware In-App Update System, Stock Check Photo Capture & Product Search Dropdown:
+1. **Role-Aware Threshold Control:** Set minimum build 119 for drivers/requesters and build 120 for admins. Set version to `5.0.2+120`.
+2. **In-situ Photo Capture & Desktop Support:** Added camera/gallery photo upload with automatic resizing and cross-platform desktop/mobile support.
+3. **Live Search Dropdown & Quick Count Edit:** Added debounced search dropdown and direct quantity editing dialog.
+
 ---
 
 ## [2026-08-22] GPS Departure Team Fix / แก้ไขการส่งชื่อรถตอนปล่อยรถ
@@ -427,3 +476,21 @@ retry instead of showing a false success.
 - EN: Added a product-result dropdown below the draft purchase-order search
   field, allowing users to choose the intended product instead of automatically
   selecting the first name-search result.
+
+# 2026-08-25 — LINE Functions secret hardening / ย้ายความลับ LINE ออกจากโค้ด
+
+- TH: Functions สำหรับส่งข้อความ LINE โดยตรงเปลี่ยนมาอ่าน
+  `LINE_CHANNEL_TOKEN` จาก environment เท่านั้น และจะหยุดส่งแบบ fail closed
+  พร้อมบันทึกเฉพาะข้อผิดพลาดการตั้งค่าเมื่อไม่ได้กำหนดค่า โดยไม่แสดง token.
+- EN: Direct LINE messaging Functions now read `LINE_CHANNEL_TOKEN` only from
+  the runtime environment and fail closed with a configuration-only error when
+  it is missing, without logging the token.
+
+- TH: การตรวจ `INTERNAL_API_SECRET` เดิมยังคงใช้งานจาก environment ตามเดิม.
+  ตั้งค่า `LINE_CHANNEL_TOKEN` และ internal service secret ใน Functions runtime
+  แล้ว และ deploy Functions ของโปรเจกต์ `fir-link-a8266` สำเร็จครบทุกฟังก์ชัน
+  เมื่อ 2026-08-25 โดยไม่แสดงค่าความลับใน log.
+- EN: Existing environment-based `INTERNAL_API_SECRET` handling remains in
+  place. `LINE_CHANNEL_TOKEN` and the internal service credential were configured
+  in the Functions runtime, and every function in project `fir-link-a8266` was
+  deployed successfully on 2026-08-25 without exposing secret values in logs.

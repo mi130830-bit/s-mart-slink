@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:s_link/features/pos/models/pos_customer.dart';
 import 'package:s_link/features/pos/models/pos_product.dart';
@@ -29,6 +31,9 @@ class PosRepository {
       return [];
     }
   }
+
+  Future<String?> uploadProductImage(int productId, File imageFile) =>
+      _api.uploadProductImage(productId: productId, imageFile: imageFile);
 
   Future<int> createOrder({
     required double totalAmount,
@@ -99,7 +104,11 @@ class PosRepository {
           'couponCode': couponCode,
       });
 
-  Future<bool> updateStock(List<Map<String, dynamic>> items) async {
+  Future<bool> updateStock(
+    List<Map<String, dynamic>> items, {
+    String? user,
+    String? note,
+  }) async {
     // 1. API Only (Tunnel)
     try {
       debugPrint('🔄 Updating Stock via API Tunnel...');
@@ -107,8 +116,8 @@ class PosRepository {
         await _api.adjustStock(
           productId: item['productId'],
           newQuantity: (item['newStock'] as num).toDouble(),
-          note: 'S-Link Stock Check (API)',
-          user: 'App User',
+          note: note ?? 'S-Link Stock Check (API)',
+          user: user ?? 'App User',
         );
       }
       return true;
@@ -118,7 +127,11 @@ class PosRepository {
     }
   }
 
-  Future<bool> addStock(List<Map<String, dynamic>> items) async {
+  Future<bool> addStock(
+    List<Map<String, dynamic>> items, {
+    String? user,
+    String? note,
+  }) async {
     // 1. API Only (Tunnel)
     try {
       debugPrint('🔄 Adding Stock via API Tunnel...');
@@ -126,8 +139,8 @@ class PosRepository {
         await _api.increaseStock(
           productId: item['productId'],
           quantity: (item['quantity'] as num).toDouble(),
-          note: 'S-Link Stock In (API)',
-          user: 'App User',
+          note: note ?? 'S-Link Stock In (API)',
+          user: user ?? 'App User',
         );
       }
       return true;
